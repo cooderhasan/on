@@ -15,6 +15,8 @@ const PERMISSIONS = {
   "stock.read": ["ADMIN", "ACCOUNTANT", "SALES", "VIEWER"],
   "stock.write": ["ADMIN", "ACCOUNTANT"],
   "reports.read": ["ADMIN", "ACCOUNTANT", "VIEWER"],
+  // Kategori ve etiket tanımları
+  "catalog.manage": ["ADMIN", "ACCOUNTANT"],
   "settings.manage": ["ADMIN"],
   "users.manage": ["ADMIN"],
 } as const satisfies Record<string, readonly UserRole[]>;

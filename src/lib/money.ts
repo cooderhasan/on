@@ -8,11 +8,15 @@ export const round2 = (v: MoneyInput) => new Decimal(v).toDecimalPlaces(2, Decim
 
 const CURRENCY_SYMBOL: Record<string, string> = { TRY: "₺", USD: "$", EUR: "€", GBP: "£" };
 
-/** "3.800,00" — Türkçe binlik / ondalık ayırıcı. Parçalı döner (kuruş ayrı stillensin diye). */
-export function formatMoneyParts(v: MoneyInput, currency = "TRY") {
-  const d = round2(v);
-  const negative = d.isNegative();
-  const [int, frac] = d.abs().toFixed(2).split(".");
+/**
+ * "3.800,00" — Türkçe binlik / ondalık ayırıcı. Parçalı döner (kuruş ayrı stillensin diye).
+ * `maxDp` > 2 ise (birim fiyat) gerektiği kadar hane gösterilir: 3.166,6667 — en az 2 hane.
+ */
+export function formatMoneyParts(v: MoneyInput, currency = "TRY", maxDp = 2) {
+  const d = new Decimal(v).toDecimalPlaces(maxDp, Decimal.ROUND_HALF_UP);
+  const negative = d.isNegative() && !d.isZero();
+  const fixed = d.abs().toFixed(maxDp).replace(/(\.\d{2}\d*?)0+$/, "$1");
+  const [int, frac] = fixed.split(".");
   const grouped = int!.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   return { sign: negative ? "-" : "", int: grouped, frac: frac!, symbol: CURRENCY_SYMBOL[currency] ?? currency };
 }

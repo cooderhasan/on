@@ -1,14 +1,19 @@
 "use client";
 
-import { useActionState, type ReactNode } from "react";
+import { createContext, startTransition, useActionState, useContext, useEffect, useRef, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import { Loader2 } from "lucide-react";
 import type { ActionState } from "@/lib/action-state";
 import { Alert, Button } from "./ui";
 import { cn } from "@/lib/cn";
 
+/** ActionForm içindeki gönderim durumu (useFormStatus, onSubmit ile gönderimde çalışmaz) */
+const PendingContext = createContext<boolean | null>(null);
+
 export function SubmitButton({ children, pendingText, variant = "primary", className }: { children: ReactNode; pendingText?: string; variant?: "primary" | "accent" | "success" | "danger"; className?: string }) {
-  const { pending } = useFormStatus();
+  const ctx = useContext(PendingContext);
+  const status = useFormStatus();
+  const pending = ctx ?? status.pending;
   return (
     <Button type="submit" variant={variant} disabled={pending} className={className}>
       {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
@@ -23,12 +28,28 @@ export function FormMessage({ state }: { state: ActionState }) {
   return null;
 }
 
-/** Server action formu; alan hataları render prop ile alanlara dağıtılır. */
-export function ActionForm({ action, children, className }: { action: (s: ActionState, fd: FormData) => Promise<ActionState>; children: (state: ActionState) => ReactNode; className?: string }) {
-  const [state, formAction] = useActionState(action, {});
+/**
+ * Server action formu. `action` prop'u yerine onSubmit ile gönderir: React 19 form action'ı, sunucu hata
+ * döndürse bile formu sıfırlar ve kullanıcının yazdıkları kaybolur. Böylece hata durumunda alanlar korunur.
+ */
+export function ActionForm({ action, children, className, resetOnSuccess = false }: { action: (s: ActionState, fd: FormData) => Promise<ActionState>; children: (state: ActionState) => ReactNode; className?: string; resetOnSuccess?: boolean }) {
+  const [state, formAction, pending] = useActionState(action, {});
+  const ref = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (state.ok && resetOnSuccess) ref.current?.reset();
+  }, [state, resetOnSuccess]);
   return (
-    <form action={formAction} className={cn("flex flex-col gap-4", className)} noValidate>
-      {children(state)}
+    <form
+      ref={ref}
+      className={cn("flex flex-col gap-4", className)}
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        startTransition(() => formAction(fd));
+      }}
+    >
+      <PendingContext.Provider value={pending}>{children(state)}</PendingContext.Provider>
     </form>
   );
 }

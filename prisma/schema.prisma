@@ -92,3 +92,185 @@ model AuditLog {
   @@index([createdAt])
   @@index([entityType, entityId])
 }
+
+// ── Kategori ve etiketler ──────────────────────────────────
+
+/// Paraşüt: gelir (satış), gider, müşteri/tedarikçi, ürün ve çalışan kategorileri ayrı listelenir.
+enum CategoryType {
+  SALES
+  EXPENSE
+  CONTACT
+  PRODUCT
+  EMPLOYEE
+}
+
+model Category {
+  id        String       @id @default(cuid())
+  type      CategoryType
+  name      String
+  /// #rrggbb (rozet rengi)
+  color     String       @default("#9e9e9e")
+  createdAt DateTime     @default(now())
+
+  contacts Contact[]
+  products Product[]
+
+  @@unique([type, name])
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
+
+// ── Cariler: müşteri ve tedarikçi ──────────────────────────
+
+enum ContactKind {
+  CUSTOMER
+  SUPPLIER
+}
+
+/// Tüzel kişi (şahıs şirketleri dahil LTD, AŞ…) / gerçek kişi
+enum PersonType {
+  LEGAL
+  NATURAL
+}
+
+/// Dövizli bakiyenin TL karşılığı hesaplanırken kullanılan kur
+enum RateType {
+  BUYING
+  SELLING
+}
+
+/// Açılış bakiyesi yönü: müşteri bize borçlu (DEBIT) / biz ona borçluyuz (CREDIT)
+enum BalanceSide {
+  DEBIT
+  CREDIT
+}
+
+model Contact {
+  id            String      @id @default(cuid())
+  kind          ContactKind
+  personType    PersonType  @default(LEGAL)
+  /// Firma unvanı veya ad soyad
+  title         String
+  shortName     String?
+  /// 10 hane VKN / 11 hane TCKN (doğrulanmış)
+  taxNumber     String?
+  taxOffice     String?
+  categoryId    String?
+  email         String?
+  phone         String?
+  fax           String?
+  address       String?
+  isAbroad      Boolean     @default(false)
+  postalCode    String?
+  district      String?
+  city          String?
+  country       String?
+  currency      String      @default("TRY")
+  rateType      RateType    @default(BUYING)
+  openingBalance     Decimal?     @db.Decimal(18, 2)
+  openingBalanceSide BalanceSide?
+  openingBalanceDate DateTime?    @db.Date
+  notes         String?
+  isArchived    Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  category Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  ibans    ContactIban[]
+  people   ContactPerson[]
+
+  @@index([kind, isArchived])
+  @@index([taxNumber])
+  @@index([title])
+}
+
+model ContactIban {
+  id        String  @id @default(cuid())
+  contactId String
+  iban      String
+  bankName  String?
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+}
+
+/// Yetkili kişiler (Paraşüt: ad, e-posta, telefon, not)
+model ContactPerson {
+  id        String  @id @default(cuid())
+  contactId String
+  name      String
+  email     String?
+  phone     String?
+  notes     String?
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+}
+
+// ── Hizmet ve ürünler ──────────────────────────────────────
+
+model Product {
+  id             String    @id @default(cuid())
+  name           String
+  code           String?   @unique
+  barcode        String?
+  categoryId     String?
+  /// GİB birim kodu (C62 = adet, KGM = kg …) — bkz. src/lib/units.ts
+  unit           String    @default("C62")
+  /// Gümrük tarife (ihracat faturası)
+  gtipCode       String?
+  trackStock     Boolean   @default(true)
+  /// Güncel stok (stok hareketleriyle güncellenir; Faz 5). Başlangıç stoku buraya yazılır.
+  stockQuantity  Decimal   @default(0) @db.Decimal(18, 4)
+  initialStock   Decimal   @default(0) @db.Decimal(18, 4)
+  criticalStock  Decimal?  @db.Decimal(18, 4)
+  /// Vergiler hariç fiyatlar
+  buyPrice       Decimal?  @db.Decimal(18, 6)
+  buyCurrency    String    @default("TRY")
+  sellPrice      Decimal?  @db.Decimal(18, 6)
+  sellCurrency   String    @default("TRY")
+  /// KDV oranı (%): 0, 1, 10, 20
+  vatRate        Int       @default(20)
+  photoPath      String?
+  isArchived     Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([isArchived])
+  @@index([name])
+  @@index([barcode])
+}
+
+// ── Kasa ve bankalar ───────────────────────────────────────
+
+enum AccountType {
+  CASH
+  BANK
+}
+
+model Account {
+  id             String      @id @default(cuid())
+  type           AccountType
+  name           String
+  currency       String      @default("TRY")
+  bankName       String?
+  branch         String?
+  accountNo      String?
+  iban           String?
+  /// Açılış bakiyesi (hareketler Faz 2+ ile eklenir)
+  openingBalance Decimal     @default(0) @db.Decimal(18, 2)
+  openingDate    DateTime?   @db.Date
+  isArchived     Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([type, isArchived])
+}

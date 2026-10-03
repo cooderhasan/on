@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import { hashPassword, verifyPassword } from "@/server/auth/password";
 import { can } from "@/server/auth/permissions";
 import { checkLoginRate, resetLoginRate } from "@/server/auth/rate-limit";
-import { formatMoney, parseMoneyInput, round2 } from "@/lib/money";
+import { formatMoney, formatMoneyParts, parseMoneyInput, round2 } from "@/lib/money";
 import { activeGroupKey, ALL_LINKS } from "@/lib/nav";
+
+/** Birim fiyat biçimi (4 haneye kadar) */
+const formatMoneyPartsStr = (v: string) => { const p = formatMoneyParts(v, "TRY", 4); return `${p.sign}${p.int},${p.frac}${p.symbol}`; };
 
 describe("şifre", () => {
   it("doğru şifreyi kabul eder, yanlışı reddeder; aynı şifre farklı özet üretir", async () => {
@@ -44,6 +47,11 @@ describe("para", () => {
     expect(formatMoney("-0.005")).toBe("-0,01₺");
     expect(formatMoney("10", "USD")).toBe("10,00$");
     expect(round2("2.675").toString()).toBe("2.68"); // float'ta 2.67 çıkar
+    // Birim fiyat: 4 haneye kadar, en az 2
+    expect(formatMoneyPartsStr("3166.666666")).toBe("3.166,6667₺");
+    expect(formatMoneyPartsStr("3800")).toBe("3.800,00₺");
+    expect(formatMoneyPartsStr("12.5")).toBe("12,50₺");
+    expect(formatMoneyPartsStr("1.2340")).toBe("1,234₺");
   });
 
   it("kullanıcı girişini çözer", () => {
