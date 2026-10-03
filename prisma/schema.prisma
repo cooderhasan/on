@@ -114,6 +114,7 @@ model Category {
 
   contacts Contact[]
   products Product[]
+  invoices Invoice[]
 
   @@unique([type, name])
 }
@@ -122,6 +123,8 @@ model Tag {
   id        String   @id @default(cuid())
   name      String   @unique
   createdAt DateTime @default(now())
+
+  invoices InvoiceTag[]
 }
 
 // ── Cariler: müşteri ve tedarikçi ──────────────────────────
@@ -179,9 +182,12 @@ model Contact {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  category Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  ibans    ContactIban[]
-  people   ContactPerson[]
+  category     Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  ibans        ContactIban[]
+  people       ContactPerson[]
+  invoices     Invoice[]
+  quotes       Quote[]
+  transactions Transaction[]
 
   @@index([kind, isArchived])
   @@index([taxNumber])
@@ -242,7 +248,9 @@ model Product {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category       Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  lines          DocumentLine[]
+  stockMovements StockMovement[]
 
   @@index([isArchived])
   @@index([name])
@@ -272,5 +280,257 @@ model Account {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
+  transactions Transaction[] @relation("TxAccount")
+  transfersIn  Transaction[] @relation("TxTargetAccount")
+
   @@index([type, isArchived])
+}
+// ── Satış / alış belgeleri ─────────────────────────────────
+// Tutarlar belge para biriminde; exchangeRate = 1 birim dövizin TL karşılığı (TRY belgede 1).
+
+enum InvoiceDirection {
+  SALE
+  PURCHASE
+}
+
+enum InvoiceKind {
+  /// Satış / alış faturası
+  INVOICE
+  /// İade faturası (cari bakiyeyi ters yönde etkiler)
+  RETURN
+}
+
+/// Stok çıkışı/girişi fatura ile mi yapılsın (Paraşüt "stok takibi" seçeneği)
+enum StockMode {
+  WITH_INVOICE
+  NONE
+}
+
+/// e-Belge durumu (Faz 3: NES)
+enum EDocStatus {
+  NONE
+  QUEUED
+  SENT
+  ACCEPTED
+  REJECTED
+  FAILED
+  CANCELLED
+}
+
+model Invoice {
+  id             String           @id @default(cuid())
+  direction      InvoiceDirection @default(SALE)
+  kind           InvoiceKind      @default(INVOICE)
+  /// Fatura ismi (Paraşüt: listede başlık; boşsa "Satış Faturası")
+  name           String?
+  /// Fatura no (elle veya e-belgede NES'ten dönen)
+  invoiceNo      String?
+  contactId      String
+  issueDate      DateTime         @db.Date
+  dueDate        DateTime         @db.Date
+  currency       String           @default("TRY")
+  exchangeRate   Decimal          @default(1) @db.Decimal(18, 6)
+  categoryId     String?
+  notes          String?
+  orderNo        String?
+  orderDate      DateTime?        @db.Date
+  stockMode      StockMode        @default(WITH_INVOICE)
+  /// Genel indirim (ara toplama): oran (%) veya tutar
+  discountType   DiscountType?
+  discountValue  Decimal?         @db.Decimal(18, 6)
+  // Hesaplanan toplamlar (belge para birimi) — src/lib/invoice-calc.ts
+  grossTotal       Decimal @default(0) @db.Decimal(18, 2)
+  discountTotal    Decimal @default(0) @db.Decimal(18, 2)
+  netTotal         Decimal @default(0) @db.Decimal(18, 2)
+  otvTotal         Decimal @default(0) @db.Decimal(18, 2)
+  vatTotal         Decimal @default(0) @db.Decimal(18, 2)
+  withholdingTotal Decimal @default(0) @db.Decimal(18, 2)
+  grandTotal       Decimal @default(0) @db.Decimal(18, 2)
+  /// Faturadan tahsil / ödeme edilecek (genel toplam − tevkifat)
+  payableTotal     Decimal @default(0) @db.Decimal(18, 2)
+  /// e-Belge (Faz 3)
+  eDocStatus     EDocStatus       @default(NONE)
+  eDocProfile    String?
+  eDocUuid       String?          @unique
+  eDocError      String?
+  eDocSentAt     DateTime?
+  /// Tekliften oluşturulduysa
+  quoteId        String?          @unique
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  contact      Contact         @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  category     Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  lines        DocumentLine[]
+  tags         InvoiceTag[]
+  transactions Transaction[]
+  quote        Quote?          @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  stockMoves   StockMovement[]
+
+  @@index([direction, issueDate])
+  @@index([contactId])
+  @@index([dueDate])
+}
+
+model InvoiceTag {
+  invoiceId String
+  tagId     String
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([invoiceId, tagId])
+}
+
+enum DiscountType {
+  PERCENT
+  AMOUNT
+}
+
+enum QuoteStatus {
+  OPEN
+  ACCEPTED
+  REJECTED
+  INVOICED
+}
+
+model Quote {
+  id            String       @id @default(cuid())
+  quoteNo       String?
+  name          String?
+  contactId     String
+  issueDate     DateTime     @db.Date
+  validUntil    DateTime?    @db.Date
+  currency      String       @default("TRY")
+  exchangeRate  Decimal      @default(1) @db.Decimal(18, 6)
+  status        QuoteStatus  @default(OPEN)
+  notes         String?
+  discountType  DiscountType?
+  discountValue Decimal?     @db.Decimal(18, 6)
+  grossTotal       Decimal @default(0) @db.Decimal(18, 2)
+  discountTotal    Decimal @default(0) @db.Decimal(18, 2)
+  netTotal         Decimal @default(0) @db.Decimal(18, 2)
+  otvTotal         Decimal @default(0) @db.Decimal(18, 2)
+  vatTotal         Decimal @default(0) @db.Decimal(18, 2)
+  withholdingTotal Decimal @default(0) @db.Decimal(18, 2)
+  grandTotal       Decimal @default(0) @db.Decimal(18, 2)
+  payableTotal     Decimal @default(0) @db.Decimal(18, 2)
+  createdById   String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  contact Contact        @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  lines   DocumentLine[]
+  invoice Invoice?
+
+  @@index([issueDate])
+  @@index([contactId])
+}
+
+/// Fatura ve teklif satırı (tam olarak biri dolu)
+model DocumentLine {
+  id               String        @id @default(cuid())
+  invoiceId        String?
+  quoteId          String?
+  position         Int
+  productId        String?
+  /// Hizmet / ürün adı (ürün kartı değişse de belgede kalır)
+  name             String
+  description      String?
+  quantity         Decimal       @db.Decimal(18, 4)
+  unit             String        @default("C62")
+  unitPrice        Decimal       @db.Decimal(18, 6)
+  discountType     DiscountType?
+  discountValue    Decimal?      @db.Decimal(18, 6)
+  vatRate          Int
+  otvRate          Decimal?      @db.Decimal(9, 4)
+  /// Tevkifat: GİB kodu (601…) ve oran (örn. 5/10 → 50)
+  withholdingCode  String?
+  withholdingRate  Int?
+  // Hesaplanan (belge para birimi)
+  grossAmount       Decimal @db.Decimal(18, 2)
+  discountAmount    Decimal @db.Decimal(18, 2)
+  /// Satır indirimi + dağıtılan genel indirim sonrası matrah (ÖTV hariç)
+  netAmount         Decimal @db.Decimal(18, 2)
+  otvAmount         Decimal @db.Decimal(18, 2)
+  vatAmount         Decimal @db.Decimal(18, 2)
+  withholdingAmount Decimal @db.Decimal(18, 2)
+  totalAmount       Decimal @db.Decimal(18, 2)
+
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  quote   Quote?   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([quoteId])
+  @@index([productId])
+}
+
+// ── Para hareketleri ───────────────────────────────────────
+
+enum TransactionType {
+  /// Müşteriden tahsilat (kasaya / bankaya giriş)
+  COLLECTION
+  /// Tedarikçiye / çalışana ödeme (çıkış) — Faz 4
+  PAYMENT
+  /// Hesaplar arası transfer (accountId → targetAccountId)
+  TRANSFER
+  /// Cari ile ilgisi olmayan giriş / çıkış (ör. ortak para koydu, banka masrafı)
+  DEPOSIT
+  WITHDRAWAL
+}
+
+model Transaction {
+  id              String          @id @default(cuid())
+  type            TransactionType
+  date            DateTime        @db.Date
+  accountId       String
+  /// Transferde hedef hesap
+  targetAccountId String?
+  contactId       String?
+  invoiceId       String?
+  /// Hesap para biriminde tutar (her zaman pozitif; yön türden gelir)
+  amount          Decimal         @db.Decimal(18, 2)
+  /// Faturaya / cariye yansıyan tutar (fatura para biriminde; aynı dövizde amount ile eşit)
+  appliedAmount   Decimal         @db.Decimal(18, 2)
+  /// Transferde hedef hesaba giren tutar (farklı dövizde farklı olabilir)
+  targetAmount    Decimal?        @db.Decimal(18, 2)
+  description     String?
+  createdById     String?
+  createdAt       DateTime        @default(now())
+
+  account       Account  @relation("TxAccount", fields: [accountId], references: [id], onDelete: Restrict)
+  targetAccount Account? @relation("TxTargetAccount", fields: [targetAccountId], references: [id], onDelete: Restrict)
+  contact       Contact? @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  invoice       Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, date])
+  @@index([contactId, date])
+  @@index([invoiceId])
+}
+
+// ── Stok hareketleri ───────────────────────────────────────
+
+enum StockMoveSource {
+  INVOICE
+  ADJUSTMENT
+}
+
+model StockMovement {
+  id         String          @id @default(cuid())
+  productId  String
+  /// + giriş, − çıkış
+  quantity   Decimal         @db.Decimal(18, 4)
+  date       DateTime        @db.Date
+  source     StockMoveSource
+  invoiceId  String?
+  note       String?
+  createdAt  DateTime        @default(now())
+
+  product Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([productId, date])
+  @@index([invoiceId])
 }

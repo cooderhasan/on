@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { requireUser } from "@/server/auth/session";
-import { ComingSoon } from "@/components/coming-soon";
+import { InvoiceListPage } from "@/components/invoice-views";
 
-export const metadata: Metadata = { title: "Faturalar" };
+export const metadata: Metadata = { title: "Satış Faturaları" };
 
-export default async function Page() {
-  await requireUser();
-  return <ComingSoon title="Faturalar" phase={2} />;
+export default function Page(props: PageProps<"/satislar">) {
+  return <InvoiceListPage searchParams={props.searchParams} />;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, startTransition, useActionState, useContext, useEffect, useRef, type ReactNode } from "react";
+import { createContext, startTransition, useActionState, useContext, useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import { Loader2 } from "lucide-react";
 import type { ActionState } from "@/lib/action-state";
@@ -10,12 +10,18 @@ import { cn } from "@/lib/cn";
 /** ActionForm içindeki gönderim durumu (useFormStatus, onSubmit ile gönderimde çalışmaz) */
 const PendingContext = createContext<boolean | null>(null);
 
+/** Sayfa hidrasyonu tamamlandı mı (öncesinde form React tarafından yönetilmez) */
+const subscribe = () => () => {};
+const useHydrated = () => useSyncExternalStore(subscribe, () => true, () => false);
+
 export function SubmitButton({ children, pendingText, variant = "primary", className }: { children: ReactNode; pendingText?: string; variant?: "primary" | "accent" | "success" | "danger"; className?: string }) {
   const ctx = useContext(PendingContext);
   const status = useFormStatus();
   const pending = ctx ?? status.pending;
+  // JS yüklenmeden basılırsa form tarayıcının varsayılanıyla gönderilirdi → yüklenene kadar pasif
+  const hydrated = useHydrated();
   return (
-    <Button type="submit" variant={variant} disabled={pending} className={className}>
+    <Button type="submit" variant={variant} disabled={pending || !hydrated} className={className}>
       {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
       {pending && pendingText ? pendingText : children}
     </Button>
@@ -41,6 +47,8 @@ export function ActionForm({ action, children, className, resetOnSuccess = false
   return (
     <form
       ref={ref}
+      // Güvenlik: JS'siz / hidrasyon öncesi gönderimde alanlar (şifre!) adres çubuğuna yazılmasın
+      method="post"
       className={cn("flex flex-col gap-4", className)}
       noValidate
       onSubmit={(e) => {

@@ -6,13 +6,15 @@ import { assertCan } from "@/server/auth/permissions";
 import type { CurrentUser } from "@/server/auth/session";
 import { AppError } from "@/lib/errors";
 import { money } from "@/lib/money";
+import { accountBalances } from "./ledger";
 import type { accountSchema } from "@/lib/validation";
 
-/** Hesap bakiyesi: Faz 1'de açılış bakiyesi; tahsilat / ödeme / transfer hareketleri Faz 2'de eklenecek. */
+/** Hesaplar ve bakiyeleri (açılış + hareketler; bkz. ledger.ts) */
 export async function listAccounts(user: CurrentUser, opts: { archived?: boolean } = {}) {
   assertCan(user, "cash.read");
   const rows = await db.account.findMany({ where: { isArchived: Boolean(opts.archived) }, orderBy: [{ type: "asc" }, { name: "asc" }] });
-  const rowsWithBalance = rows.map((a) => ({ ...a, balance: money(a.openingBalance.toString()) }));
+  const balances = await accountBalances(rows.map((a) => a.id));
+  const rowsWithBalance = rows.map((a) => ({ ...a, balance: balances.get(a.id)! }));
   // Para birimi bazında net toplam (farklı dövizler toplanmaz)
   const totals = new Map<string, ReturnType<typeof money>>();
   for (const a of rowsWithBalance) totals.set(a.currency, (totals.get(a.currency) ?? money(0)).plus(a.balance));
@@ -23,7 +25,7 @@ export async function getAccount(user: CurrentUser, id: string) {
   assertCan(user, "cash.read");
   const a = await db.account.findUnique({ where: { id } });
   if (!a) throw new AppError("NOT_FOUND", "Hesap bulunamadı.");
-  return { ...a, balance: money(a.openingBalance.toString()) };
+  return { ...a, balance: (await accountBalances([a.id])).get(a.id)! };
 }
 
 type AccountInput = z.infer<typeof accountSchema>;

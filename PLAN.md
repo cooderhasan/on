@@ -172,6 +172,9 @@ Account (kasa/banka) · Transaction (tahsilat/ödeme/transfer) · Cheque · Cate
 
 ## 5. Fazlar
 
+Durum: Faz 0 ✅ · Faz 1 ✅ · Faz 2 ✅ (3 Ekim 2026)
+
+
 | Faz | Kapsam | Bitti sayılır |
 |---|---|---|
 | 0 | Kalan Paraşüt ekranlarının incelenmesi (müşteri, kasa/banka, stok, raporlar, ayarlar); proje iskeleti, giriş, Paraşüt düzeninde layout (sol menü, + hızlı oluştur), Docker Postgres | iskelet localde açılıyor |

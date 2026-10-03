@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { requireUser } from "@/server/auth/session";
-import { ComingSoon } from "@/components/coming-soon";
+import { QuoteListPage } from "@/components/quote-views";
 
 export const metadata: Metadata = { title: "Teklifler" };
 
-export default async function Page() {
-  await requireUser();
-  return <ComingSoon title="Teklifler" phase={2} />;
+export default function Page(props: PageProps<"/teklifler">) {
+  return <QuoteListPage searchParams={props.searchParams} />;
 }

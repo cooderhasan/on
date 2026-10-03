@@ -8,6 +8,7 @@ import { assertCan, type Permission } from "@/server/auth/permissions";
 import type { CurrentUser } from "@/server/auth/session";
 import { AppError } from "@/lib/errors";
 import { money } from "@/lib/money";
+import { contactBalance, contactBalances } from "./ledger";
 import type { contactSchema, parseRepeated } from "@/lib/validation";
 
 export const PAGE_SIZE = 25;
@@ -54,18 +55,10 @@ export async function listContacts(user: CurrentUser, kind: ContactKind, f: Cont
     }),
     db.contact.count({ where }),
   ]);
-  return { rows: rows.map((r) => ({ ...r, balance: contactBalance(r) })), total, page, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
+  const balances = await contactBalances(rows.map((r) => r.id));
+  return { rows: rows.map((r) => ({ ...r, balance: balances.get(r.id)! })), total, page, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
 }
 
-/**
- * Cari bakiye (+ = bize borçlu / tahsil edilecek, − = biz borçluyuz / ödenecek).
- * Faz 1'de yalnızca açılış bakiyesi; fatura ve tahsilatlar Faz 2'de eklenecek.
- */
-export function contactBalance(c: { openingBalance: Prisma.Decimal | null; openingBalanceSide: "DEBIT" | "CREDIT" | null }) {
-  if (!c.openingBalance) return money(0);
-  const v = money(c.openingBalance.toString());
-  return c.openingBalanceSide === "CREDIT" ? v.negated() : v;
-}
 
 export async function getContact(user: CurrentUser, id: string) {
   const c = await db.contact.findUnique({
@@ -74,7 +67,7 @@ export async function getContact(user: CurrentUser, id: string) {
   });
   if (!c) throw new AppError("NOT_FOUND", "Kayıt bulunamadı.");
   assertCan(user, readPerm(c.kind));
-  return { ...c, balance: contactBalance(c) };
+  return { ...c, balance: await contactBalance(c.id) };
 }
 
 type ContactInput = z.infer<typeof contactSchema>;
@@ -155,11 +148,11 @@ export async function setContactArchived(user: CurrentUser, id: string, archived
 
 /** Liste altı toplamları (Paraşüt: tahsil edilecek / ödenecek) */
 export async function contactTotals(kind: ContactKind) {
-  const rows = await db.contact.findMany({ where: { kind, isArchived: false, openingBalance: { not: null } }, select: { openingBalance: true, openingBalanceSide: true } });
+  const ids = (await db.contact.findMany({ where: { kind, isArchived: false }, select: { id: true } })).map((c) => c.id);
+  const balances = await contactBalances(ids);
   let receivable = money(0);
   let payable = money(0);
-  for (const r of rows) {
-    const b = contactBalance(r);
+  for (const b of balances.values()) {
     if (b.greaterThan(0)) receivable = receivable.plus(b);
     else if (b.lessThan(0)) payable = payable.plus(b.abs());
   }

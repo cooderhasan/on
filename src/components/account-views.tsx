@@ -10,6 +10,11 @@ import { buildHref, InfoRow } from "./list";
 import { Money } from "./money";
 import { AccountForm, type AccountFormValues } from "./account-form";
 import { formatIban } from "@/lib/iban";
+import { db } from "@/server/db";
+import { accountMovements } from "@/server/services/transactions";
+import { CashForms, DeleteTransactionButton } from "./money-forms";
+
+const MOVE_LABEL = { COLLECTION: "Tahsilat", PAYMENT: "Ödeme", TRANSFER: "Virman", DEPOSIT: "Para girişi", WITHDRAWAL: "Para çıkışı" } as const;
 
 type SP = Record<string, string | string[] | undefined>;
 const BASE = "/kasa-ve-bankalar";
@@ -68,7 +73,6 @@ export async function AccountListPage({ searchParams }: { searchParams: Promise<
           </div>
         </div>
       </Card>
-      <p className="mt-2 text-xs text-text-3">Bakiye şu an açılış bakiyesidir; tahsilat, ödeme ve transferler Faz 2&apos;de eklenecek.</p>
     </>
   );
 }
@@ -77,10 +81,11 @@ export async function AccountDetailPage({ params }: { params: Promise<{ id: stri
   const user = await requireUser("cash.read");
   const a = await orNotFound(getAccount(user, (await params).id));
   const canEdit = can(user.role, "cash.write");
+  const [moves, allAccounts] = await Promise.all([accountMovements(user, a.id), canEdit ? db.account.findMany({ where: { isArchived: false }, select: { id: true, name: true, currency: true }, orderBy: { name: "asc" } }) : Promise.resolve([])]);
   return (
     <>
       <PageHeader title={a.name} parent={{ href: BASE, label: "Kasa ve Bankalar" }} />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
             <h2 className="flex items-center gap-3 text-lg text-text">{a.type === "BANK" ? <Landmark className="size-7 text-text-3" /> : <Banknote className="size-7 text-text-3" />} {a.name}</h2>
@@ -105,17 +110,47 @@ export async function AccountDetailPage({ params }: { params: Promise<{ id: stri
             </InfoRow>
           </dl>
         </Card>
-        <aside className="flex flex-col gap-4">
+        <Card className="xl:col-start-1">
+          <CardHeader title="Hesap hareketleri" />
+          {moves.length === 0 ? (
+            <p className="px-4 py-4 text-sm text-text-3">Henüz hareket yok.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead className="border-b border-border"><tr><Th>Tarih</Th><Th>İşlem</Th><Th className="text-right">Giriş</Th><Th className="text-right">Çıkış</Th><Th className="text-right">Bakiye</Th><Th className="w-10" /></tr></thead>
+                <tbody className="divide-y divide-border">
+                  {moves.map((m) => (
+                    <tr key={m.id}>
+                      <Td className="whitespace-nowrap text-text-2">{m.date.toLocaleDateString("tr-TR", { timeZone: "UTC" })}</Td>
+                      <Td>
+                        <span className="mr-2 rounded-sm bg-card-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-text-2">{MOVE_LABEL[m.type]}</span>
+                        {m.type === "TRANSFER" ? (m.incoming ? `${m.account.name} hesabından` : `${m.targetAccount?.name} hesabına`) : m.contact ? <Link href={`${m.contact.kind === "CUSTOMER" ? "/musteriler" : "/tedarikciler"}/${m.contact.id}`} className="hover:text-accent">{m.contact.title}</Link> : null}
+                        {m.invoice && <> · <Link href={`${m.invoice.direction === "SALE" ? "/satislar" : "/giderler"}/${m.invoice.id}`} className="text-accent hover:underline">{m.invoice.name || m.invoice.invoiceNo || "Fatura"}</Link></>}
+                        {m.description && <span className="block text-xs text-text-3">{m.description}</span>}
+                      </Td>
+                      <Td className="text-right">{m.incoming ? <Money value={m.value} currency={a.currency} className="text-success" /> : ""}</Td>
+                      <Td className="text-right">{!m.incoming ? <Money value={m.value} currency={a.currency} className="text-danger" /> : ""}</Td>
+                      <Td className="text-right"><Money value={m.balance} currency={a.currency} /></Td>
+                      <Td>{canEdit && <DeleteTransactionButton id={m.id} />}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+        <aside className="flex flex-col gap-4 xl:col-start-2 xl:row-span-2 xl:row-start-1">
           <Card>
             <div className="flex items-center justify-between px-4 py-4">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-text-2">Bakiye</span>
-              <Money value={a.balance} currency={a.currency} className="text-lg" />
+              <Money value={a.balance} currency={a.currency} className={a.balance.isNegative() ? "text-lg text-danger" : "text-lg"} />
             </div>
           </Card>
-          <Card>
-            <CardHeader title="Hesap hareketleri" />
-            <p className="px-4 py-4 text-sm text-text-3">Tahsilat, ödeme ve transferler Faz 2 ile burada listelenecek.</p>
-          </Card>
+          {canEdit && !a.isArchived && (
+            <Card className="p-4">
+              <CashForms account={{ id: a.id, name: a.name, currency: a.currency }} accounts={allAccounts} />
+            </Card>
+          )}
           {canEdit && (
             <form action={archiveAccountAction}>
               <input type="hidden" name="id" value={a.id} />

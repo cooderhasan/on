@@ -1,10 +1,11 @@
 import Decimal from "decimal.js";
 
-/** Para hesabı: her zaman Decimal (float kuruş hatası yapar). Yuvarlama: yarım yukarı, 2 hane. */
-export type MoneyInput = Decimal.Value;
+/** Para hesabı: her zaman Decimal (float kuruş hatası yapar). Yuvarlama: yarım yukarı, 2 hane. Girdi: Decimal, sayı, metin veya Prisma Decimal. */
+export type MoneyInput = Decimal.Value | { toString(): string };
+const toDec = (v: MoneyInput) => (v instanceof Decimal || typeof v === "number" || typeof v === "string" ? new Decimal(v) : new Decimal(v.toString()));
 
-export const money = (v: MoneyInput) => new Decimal(v);
-export const round2 = (v: MoneyInput) => new Decimal(v).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+export const money = (v: MoneyInput) => toDec(v);
+export const round2 = (v: MoneyInput) => toDec(v).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
 const CURRENCY_SYMBOL: Record<string, string> = { TRY: "₺", USD: "$", EUR: "€", GBP: "£" };
 
@@ -13,7 +14,7 @@ const CURRENCY_SYMBOL: Record<string, string> = { TRY: "₺", USD: "$", EUR: "�
  * `maxDp` > 2 ise (birim fiyat) gerektiği kadar hane gösterilir: 3.166,6667 — en az 2 hane.
  */
 export function formatMoneyParts(v: MoneyInput, currency = "TRY", maxDp = 2) {
-  const d = new Decimal(v).toDecimalPlaces(maxDp, Decimal.ROUND_HALF_UP);
+  const d = toDec(v).toDecimalPlaces(maxDp, Decimal.ROUND_HALF_UP);
   const negative = d.isNegative() && !d.isZero();
   const fixed = d.abs().toFixed(maxDp).replace(/(\.\d{2}\d*?)0+$/, "$1");
   const [int, frac] = fixed.split(".");

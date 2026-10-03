@@ -14,6 +14,9 @@ import { buildHref, CategoryBadge, InfoRow, ListFooter, ListToolbar } from "./li
 import { Money } from "./money";
 import { ContactForm, type ContactFormValues } from "./contact-form";
 import { formatIban } from "@/lib/iban";
+import { db } from "@/server/db";
+import { contactStatement, type StatementRow } from "@/server/services/ledger";
+import { SettlementForm } from "./money-forms";
 
 type SP = Record<string, string | string[] | undefined>;
 
@@ -120,7 +123,6 @@ export async function ContactListPage({ kind, searchParams }: { kind: ContactKin
           }
         />
       </Card>
-      <p className="mt-2 text-xs text-text-3">Bakiye şu an yalnızca açılış bakiyesini gösterir; faturalar ve tahsilatlar Faz 2&apos;de eklenecek.</p>
     </>
   );
 }
@@ -132,12 +134,14 @@ export async function ContactDetailPage({ kind, params }: { kind: ContactKind; p
   if (c.kind !== kind) notFound();
   const L = KIND_LABELS[kind];
   const canEdit = can(user.role, writePerm(kind));
+  const canCash = can(user.role, "cash.write");
+  const [statement, accounts] = await Promise.all([contactStatement(c.id), canEdit && canCash ? db.account.findMany({ where: { isArchived: false }, select: { id: true, name: true, currency: true }, orderBy: { name: "asc" } }) : Promise.resolve([])]);
   const addr = c.isAbroad ? [c.address, c.postalCode, c.city, c.country] : [c.address, c.postalCode, [c.district, c.city].filter(Boolean).join(" / ")];
 
   return (
     <>
       <PageHeader title={c.shortName || c.title} parent={{ href: L.path, label: L.plural }} />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
             <h2 className="flex min-w-0 items-center gap-3 text-lg text-text">
@@ -184,7 +188,8 @@ export async function ContactDetailPage({ kind, params }: { kind: ContactKind; p
             </div>
           )}
         </Card>
-        <aside className="flex flex-col gap-4">
+        <StatementCard rows={statement} currency={c.currency} />
+        <aside className="flex flex-col gap-4 xl:col-start-2 xl:row-span-2 xl:row-start-1">
           <Card>
             <div className="flex items-center justify-between px-4 py-4">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-text-2">Bakiye</span>
@@ -196,10 +201,14 @@ export async function ContactDetailPage({ kind, params }: { kind: ContactKind; p
               </p>
             )}
           </Card>
-          <Card>
-            <CardHeader title="Hesap hareketleri" />
-            <p className="px-4 py-4 text-sm text-text-3">Faturalar, tahsilatlar ve ödemeler Faz 2 ile burada listelenecek.</p>
-          </Card>
+          {canEdit && canCash && (
+            <Card className="p-4">
+              <p className="mb-2 text-[11px] font-semibold uppercase text-text-2">{kind === "CUSTOMER" ? "Cari tahsilat ekle" : "Cari ödeme ekle"}</p>
+              <SettlementForm contactId={c.id} accounts={accounts} docCurrency={c.currency} label={kind === "CUSTOMER" ? "Tahsilat ekle" : "Ödeme ekle"} />
+              <p className="mt-2 text-[11px] text-text-3">Belirli bir faturaya bağlamak için faturanın sayfasından ekleyin.</p>
+            </Card>
+          )}
+          {kind === "CUSTOMER" && can(user.role, "sales.write") && <LinkButton href={`/satislar/yeni?musteri=${c.id}`} variant="secondary">Fatura oluştur</LinkButton>}
           {canEdit && (
             <form action={archiveContactAction}>
               <input type="hidden" name="id" value={c.id} />
@@ -246,5 +255,39 @@ export async function ContactFormPage({ kind, params }: { kind: ContactKind; par
         <ContactForm values={values} categories={categories} cancelHref={id ? `${L.path}/${id}` : L.path} />
       </Card>
     </>
+  );
+}
+
+const ROW_LABEL: Record<StatementRow["kind"], string> = { OPENING: "Açılış", INVOICE: "Fatura", RETURN: "İade", COLLECTION: "Tahsilat", PAYMENT: "Ödeme" };
+
+/** Cari ekstre: borç / alacak / yürüyen bakiye (en yeni üstte) */
+function StatementCard({ rows, currency }: { rows: StatementRow[]; currency: string }) {
+  return (
+    <Card className="xl:col-start-1">
+      <CardHeader title="Hesap hareketleri (ekstre)" />
+      {rows.length === 0 ? (
+        <p className="px-4 py-4 text-sm text-text-3">Henüz hareket yok.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-sm">
+            <thead className="border-b border-border"><tr><Th>Tarih</Th><Th>İşlem</Th><Th className="text-right">Borç</Th><Th className="text-right">Alacak</Th><Th className="text-right">Bakiye</Th></tr></thead>
+            <tbody className="divide-y divide-border">
+              {[...rows].reverse().map((r, i) => (
+                <tr key={i}>
+                  <Td className="whitespace-nowrap text-text-2">{r.date.toLocaleDateString("tr-TR", { timeZone: "UTC" })}</Td>
+                  <Td>
+                    <span className="mr-2 rounded-sm bg-card-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-text-2">{ROW_LABEL[r.kind]}</span>
+                    {r.href ? <Link href={r.href} className="hover:text-accent">{r.label}</Link> : r.label}
+                  </Td>
+                  <Td className="text-right">{r.debit.isZero() ? "" : <Money value={r.debit} currency={currency} />}</Td>
+                  <Td className="text-right">{r.credit.isZero() ? "" : <Money value={r.credit} currency={currency} />}</Td>
+                  <Td className="text-right"><Money value={r.balance} currency={currency} className={r.balance.isNegative() ? "text-[#8a6d5a]" : "text-teal"} /></Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
