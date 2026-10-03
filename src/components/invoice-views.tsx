@@ -8,11 +8,13 @@ import { getInvoice, listInvoices, type PaymentFilter } from "@/server/services/
 import { listCategories, listTags } from "@/server/services/categories";
 import { orNotFound, pageParam, strParam } from "@/server/page-helpers";
 import { deleteInvoiceAction } from "@/app/actions/sales";
-import { Alert, Card, CardHeader, EmptyState, LinkButton, PageHeader, Td, Th } from "./ui";
+import { Alert, buttonClass, Card, CardHeader, EmptyState, LinkButton, PageHeader, Td, Th } from "./ui";
 import { buildHref, CategoryBadge, ListFooter, ListToolbar } from "./list";
 import { Money } from "./money";
 import { DocumentForm, type DocumentFormValues, type FormContact, type FormProduct } from "./document-form";
 import { ConfirmDelete, DeleteTransactionButton, SettlementForm } from "./money-forms";
+import { EDocPanel } from "./einvoice-forms";
+import { isVoidEDoc } from "@/lib/edoc-status";
 import { unitLabel } from "@/lib/units";
 import { cn } from "@/lib/cn";
 
@@ -145,6 +147,7 @@ export async function InvoiceDetailPage({ params, searchParams }: { params: Prom
   if (inv.direction !== "SALE") notFound();
   const sp = await searchParams;
   const canWrite = can(user.role, "sales.write") && can(user.role, "cash.write");
+  const canSend = can(user.role, "einvoice.send");
   const accounts = canWrite ? await db.account.findMany({ where: { isArchived: false }, select: { id: true, name: true, currency: true }, orderBy: { name: "asc" } }) : [];
   const title = inv.name || (inv.kind === "RETURN" ? "İade Faturası" : "Satış Faturası");
   const c = inv.contact;
@@ -160,7 +163,12 @@ export async function InvoiceDetailPage({ params, searchParams }: { params: Prom
             <h2 className="flex items-center gap-3 text-lg text-text"><FileText className="size-7 text-accent" /> {title}</h2>
             <div className="flex items-center gap-2">
               {canWrite && !inv.locked && <LinkButton href={`${BASE}/${inv.id}/duzenle`} variant="secondary">Düzenle</LinkButton>}
-              <LinkButton href={`${BASE}/${inv.id}/yazdir`} variant="secondary" target="_blank"><Printer className="size-3.5" /> Yazdır</LinkButton>
+              {inv.eDocStatus === "NONE" || inv.eDocStatus === "FAILED" ? (
+                <LinkButton href={`${BASE}/${inv.id}/yazdir`} variant="secondary" target="_blank"><Printer className="size-3.5" /> Yazdır</LinkButton>
+              ) : (
+                // Gönderilmiş e-belgenin resmi görüntüsü NES'ten (kendi şablonumuz değil)
+                <a href={`/api/einvoice/${inv.id}/html`} target="_blank" rel="noopener" className={buttonClass("secondary")}><Printer className="size-3.5" /> e-Belgeyi göster</a>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
@@ -234,17 +242,21 @@ export async function InvoiceDetailPage({ params, searchParams }: { params: Prom
 
         <aside className="flex flex-col gap-4">
           <Card>
-            <div className="border-b border-border px-4 py-3 text-sm">
+            <div className="flex flex-col gap-2 border-b border-border px-4 py-3 text-sm">
               <p className="text-[11px] font-semibold uppercase text-text-2">e-Belge durumu</p>
-              <div className="mt-1"><DocStatusBadge status={inv.eDocStatus} profile={inv.eDocProfile} /></div>
-              <p className="mt-2 text-xs text-text-3">e-Fatura / e-Arşiv olarak resmileştirme Faz 3&apos;te (NES) eklenecek.</p>
+              <DocStatusBadge status={inv.eDocStatus} profile={inv.eDocProfile} />
+              {inv.eDocSentAt && <p className="text-xs text-text-3">Gönderim: {inv.eDocSentAt.toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" })}{inv.eDocCheckedAt ? ` · son sorgu ${inv.eDocCheckedAt.toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" })}` : ""}</p>}
+              {inv.eDocAnswer && inv.eDocAnswer !== "None" && <p className="text-xs text-text-2">Alıcı yanıtı: {{ Waiting: "Bekleniyor", Accepted: "Kabul etti", Rejected: "Reddetti" }[inv.eDocAnswer] ?? inv.eDocAnswer}</p>}
+              {inv.eDocError && <Alert tone={inv.eDocStatus === "REJECTED" || inv.eDocStatus === "FAILED" ? "danger" : "warning"} className="text-xs">{inv.eDocError}</Alert>}
+              {(inv.eDocStatus === "REJECTED" || inv.eDocStatus === "CANCELLED") && <p className="text-xs text-text-3">Bu faturanın hukuki etkisi yok: bakiyeye ve stoğa yansımaz. Silebilir, gerekirse yeni fatura kesebilirsiniz.</p>}
+              <EDocPanel invoiceId={inv.id} status={inv.eDocStatus} profile={inv.eDocProfile} canSend={canSend} hasError={inv.eDocStatus === "FAILED"} />
             </div>
             <div className="flex items-center justify-between px-4 py-4">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-text-2">Kalan</span>
               <Money value={inv.remaining} currency={inv.currency} className={cn("text-xl", inv.overdue ? "text-danger" : "")} />
             </div>
             {inv.overdue && <p className="flex items-center gap-1.5 px-4 pb-3 text-xs text-danger"><AlertTriangle className="size-3.5" /> Vadesi geçti</p>}
-            {canWrite && inv.remaining.greaterThan(0) && (
+            {canWrite && inv.remaining.greaterThan(0) && !isVoidEDoc(inv.eDocStatus) && (
               <div className="border-t border-border px-4 py-4">
                 <p className="mb-2 text-[11px] font-semibold uppercase text-text-2">{isReturn ? "Ödeme ekle" : "Tahsilat ekle"}</p>
                 <SettlementForm invoiceId={inv.id} accounts={accounts} docCurrency={inv.currency} defaultAmount={inv.remaining.toString()} label={isReturn ? "Ödeme ekle" : "Tahsilat ekle"} />
@@ -270,7 +282,7 @@ export async function InvoiceDetailPage({ params, searchParams }: { params: Prom
               </ul>
             )}
           </Card>
-          {canWrite && !inv.locked && <ConfirmDelete action={deleteInvoiceAction} id={inv.id} label="Faturayı sil" confirmText="Fatura kalıcı olarak silinsin mi?" />}
+          {can(user.role, "sales.write") && inv.deletable && <ConfirmDelete action={deleteInvoiceAction} id={inv.id} label="Faturayı sil" confirmText="Fatura kalıcı olarak silinsin mi?" />}
         </aside>
       </div>
     </>
@@ -306,10 +318,11 @@ export async function InvoiceFormPage({ params, searchParams }: { params?: Promi
     values = {
       id: inv.id, kind: inv.kind, name: inv.name, docNo: inv.invoiceNo, contactId: inv.contactId, issueDate: inv.issueDate.toISOString().slice(0, 10), dueDate: inv.dueDate.toISOString().slice(0, 10),
       currency: inv.currency, exchangeRate: inv.exchangeRate.toString(), categoryId: inv.categoryId, notes: inv.notes, orderNo: inv.orderNo, orderDate: inv.orderDate?.toISOString().slice(0, 10) ?? null,
+      returnRefNo: inv.returnRefNo, returnRefDate: inv.returnRefDate?.toISOString().slice(0, 10) ?? null,
       stockMode: inv.stockMode, discountType: inv.discountType, discountValue: inv.discountValue?.toString() ?? null, tagIds: inv.tags.map((t) => t.tagId),
       lines: inv.lines.map((l) => ({
         productId: l.productId ?? "", name: l.name, description: l.description, quantity: l.quantity.toString().replace(".", ","), unit: l.unit, unitPrice: l.unitPrice.toString().replace(".", ","),
-        discountType: l.discountType ?? "", discountValue: l.discountValue?.toString().replace(".", ",") ?? "", vatRate: l.vatRate, otvRate: l.otvRate?.toString().replace(".", ",") ?? "",
+        discountType: l.discountType ?? "", discountValue: l.discountValue?.toString().replace(".", ",") ?? "", vatRate: l.vatRate, vatExemptionCode: l.vatExemptionCode ?? "", otvRate: l.otvRate?.toString().replace(".", ",") ?? "", otvCode: l.otvCode ?? "0074",
         withholdingRate: l.withholdingRate?.toString() ?? "", withholdingCode: l.withholdingCode ?? "",
       })),
     };

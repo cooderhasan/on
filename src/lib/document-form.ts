@@ -2,6 +2,7 @@ import { z } from "zod";
 import { parseMoneyInput } from "./money";
 import { CURRENCIES, isUnitCode, VAT_RATES } from "./units";
 import { optText } from "./validation";
+import { isOtvCode, isVatExemptionCode, withholdingByCode } from "./gib-codes";
 
 /** Fatura / teklif formu: başlık alanları + satır dizileri (line_*[]). Saf fonksiyon. */
 
@@ -27,6 +28,9 @@ export const documentHeaderSchema = z
     orderDate: optDate,
     stockMode: z.enum(["WITH_INVOICE", "NONE"]).default("WITH_INVOICE"),
     kind: z.enum(["INVOICE", "RETURN"]).default("INVOICE"),
+    /** İade faturasında iade edilen faturanın no / tarihi (e-belgede zorunlu) */
+    returnRefNo: optText(40),
+    returnRefDate: optDate,
     docDiscountType: z.enum(["PERCENT", "AMOUNT", ""]).optional(),
     docDiscountValue: z.string().optional(),
   })
@@ -44,7 +48,10 @@ export interface ParsedLine {
   discountType: "PERCENT" | "AMOUNT" | null;
   discountValue: string | null;
   vatRate: number;
+  /** KDV %0 ise GİB istisna sebep kodu */
+  vatExemptionCode: string | null;
   otvRate: string | null;
+  otvCode: string | null;
   withholdingRate: number | null;
   withholdingCode: string | null;
 }
@@ -70,7 +77,12 @@ export function parseLines(fd: FormData): { lines: ParsedLine[]; errors: LineErr
     const discType = get("discType", i);
     const disc = get("discValue", i) ? parseMoneyInput(get("discValue", i)) : null;
     const otv = get("otv", i) ? parseMoneyInput(get("otv", i)) : null;
-    const wh = get("whRate", i) ? Number(get("whRate", i)) : null;
+    // Tevkifat resmi koddan; oran koddan gelir, yalnızca 650 (Diğer) için kullanıcı girer
+    const whCode = get("whCode", i) || null;
+    const whDef = withholdingByCode(whCode);
+    const wh = whCode ? (whDef?.rate ?? (get("whRate", i) ? Number(get("whRate", i)) : null)) : null;
+    const exempt = vat === 0 ? get("vatExempt", i) || null : null;
+    const otvCode = otv && !otv.isZero() ? get("otvCode", i) || "0074" : null;
     const unit = get("unit", i) || "C62";
     if (!name) errors[row] = "Hizmet / ürün adını girin.";
     else if (!qty || qty.lessThanOrEqualTo(0)) errors[row] = "Miktar sıfırdan büyük olmalı.";
@@ -80,7 +92,13 @@ export function parseLines(fd: FormData): { lines: ParsedLine[]; errors: LineErr
     else if (get("discValue", i) && (!disc || disc.isNegative())) errors[row] = "İndirim geçersiz.";
     else if (discType === "PERCENT" && disc && disc.greaterThan(100)) errors[row] = "İndirim %100'ü aşamaz.";
     else if (get("otv", i) && (!otv || otv.isNegative())) errors[row] = "ÖTV oranı geçersiz.";
-    else if (wh !== null && (!Number.isInteger(wh) || wh <= 0 || wh > 100)) errors[row] = "Tevkifat oranı geçersiz.";
+    else if (whCode && !whDef) errors[row] = "Tevkifat kodu geçersiz.";
+    else if (whCode && (wh === null || !Number.isInteger(wh) || wh <= 0 || wh > 100)) errors[row] = "Tevkifat oranını girin (650 Diğer).";
+    else if (!whCode && get("whRate", i)) errors[row] = "Tevkifat kodu seçin.";
+    else if (whCode && vat === 0) errors[row] = "KDV'siz satırda tevkifat olamaz.";
+    else if (vat === 0 && !exempt) errors[row] = "KDV %0 ise istisna sebebini seçin.";
+    else if (exempt && !isVatExemptionCode(exempt)) errors[row] = "İstisna kodu geçersiz.";
+    else if (otvCode && !isOtvCode(otvCode)) errors[row] = "ÖTV kodu geçersiz.";
     lines.push({
       productId: get("productId", i) || null,
       name: name.slice(0, 250),
@@ -91,9 +109,11 @@ export function parseLines(fd: FormData): { lines: ParsedLine[]; errors: LineErr
       discountType: disc && !disc.isZero() && (discType === "PERCENT" || discType === "AMOUNT") ? discType : null,
       discountValue: disc && !disc.isZero() ? disc.toString() : null,
       vatRate: vat,
+      vatExemptionCode: exempt,
       otvRate: otv && !otv.isZero() ? otv.toString() : null,
-      withholdingRate: wh,
-      withholdingCode: wh ? get("whCode", i).slice(0, 10) || null : null,
+      otvCode,
+      withholdingRate: whCode ? wh : null,
+      withholdingCode: whCode,
     });
   });
   return { lines: lines.slice(0, 200), errors };

@@ -1,6 +1,7 @@
 import "server-only";
 import Decimal from "decimal.js";
 import { db } from "@/server/db";
+import { VOID_EDOC } from "@/lib/edoc-status";
 
 /**
  * Bakiye kuralları (tek yer):
@@ -26,7 +27,8 @@ export async function contactBalances(ids: string[]): Promise<Map<string, Decima
   if (ids.length === 0) return out;
   const [contacts, invoices, txs] = await Promise.all([
     db.contact.findMany({ where: { id: { in: ids } }, select: { id: true, openingBalance: true, openingBalanceSide: true } }),
-    db.invoice.groupBy({ by: ["contactId", "direction", "kind"], where: { contactId: { in: ids } }, _sum: { payableTotal: true } }),
+    // Reddedilen / iptal edilen e-belgelerin hukuki etkisi yok → bakiyeye girmez
+    db.invoice.groupBy({ by: ["contactId", "direction", "kind"], where: { contactId: { in: ids }, eDocStatus: { notIn: [...VOID_EDOC] } }, _sum: { payableTotal: true } }),
     db.transaction.groupBy({ by: ["contactId", "type"], where: { contactId: { in: ids }, type: { in: ["COLLECTION", "PAYMENT"] } }, _sum: { appliedAmount: true } }),
   ]);
   const add = (id: string, v: Decimal) => out.set(id, (out.get(id) ?? new Decimal(0)).plus(v));
@@ -54,7 +56,7 @@ export interface StatementRow {
 export async function contactStatement(id: string): Promise<StatementRow[]> {
   const [c, invoices, txs] = await Promise.all([
     db.contact.findUniqueOrThrow({ where: { id }, select: { openingBalance: true, openingBalanceSide: true, openingBalanceDate: true, createdAt: true, kind: true } }),
-    db.invoice.findMany({ where: { contactId: id }, select: { id: true, direction: true, kind: true, issueDate: true, name: true, invoiceNo: true, payableTotal: true, createdAt: true } }),
+    db.invoice.findMany({ where: { contactId: id, eDocStatus: { notIn: [...VOID_EDOC] } }, select: { id: true, direction: true, kind: true, issueDate: true, name: true, invoiceNo: true, payableTotal: true, createdAt: true } }),
     db.transaction.findMany({ where: { contactId: id, type: { in: ["COLLECTION", "PAYMENT"] } }, select: { id: true, type: true, date: true, appliedAmount: true, description: true, invoiceId: true, createdAt: true, account: { select: { name: true } } } }),
   ]);
   type Raw = Omit<StatementRow, "balance"> & { sortKey: Date };

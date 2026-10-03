@@ -178,6 +178,9 @@ model Contact {
   openingBalanceSide BalanceSide?
   openingBalanceDate DateTime?    @db.Date
   notes         String?
+  /// NES mükellef sorgusu: e-Fatura posta kutusu (PK) etiketi; null = e-Fatura mükellefi değil / sorgulanmadı
+  eInvoiceAlias     String?
+  eInvoiceCheckedAt DateTime?
   isArchived    Boolean     @default(false)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -354,6 +357,12 @@ model Invoice {
   eDocUuid       String?          @unique
   eDocError      String?
   eDocSentAt     DateTime?
+  /// Ticari faturada alıcının yanıtı: Waiting / Accepted / Rejected
+  eDocAnswer     String?
+  eDocCheckedAt  DateTime?
+  /// İade faturasında iade edilen faturanın no ve tarihi (UBL BillingReference)
+  returnRefNo    String?
+  returnRefDate  DateTime?        @db.Date
   /// Tekliften oluşturulduysa
   quoteId        String?          @unique
   createdById    String?
@@ -444,7 +453,11 @@ model DocumentLine {
   discountType     DiscountType?
   discountValue    Decimal?      @db.Decimal(18, 6)
   vatRate          Int
+  /// KDV %0 ise GİB istisna sebep kodu (201…351)
+  vatExemptionCode String?
   otvRate          Decimal?      @db.Decimal(9, 4)
+  /// ÖTV vergi kodu (0071, 0073, 0074…)
+  otvCode          String?
   /// Tevkifat: GİB kodu (601…) ve oran (örn. 5/10 → 50)
   withholdingCode  String?
   withholdingRate  Int?
@@ -533,4 +546,22 @@ model StockMovement {
 
   @@index([productId, date])
   @@index([invoiceId])
+}
+// ── e-Fatura / e-Arşiv (NES) ayarları — tek satır ──────────
+
+model EInvoiceSettings {
+  id             String   @id @default("nes")
+  /// https://apitest.nes.com.tr/ (test) veya https://api.nes.com.tr/ (canlı)
+  apiUrl         String   @default("https://apitest.nes.com.tr/")
+  /// AES-256-GCM ile şifreli API anahtarı (ENCRYPTION_KEY)
+  apiKeyEnc      String?
+  apiKeyLast4    String?
+  /// Gönderici birim (GB) etiketi, ör. urn:mail:defaultgb@nes.com.tr
+  senderAlias    String?
+  /// Portalda tanımlı 3 harfli seriler (NES numarayı verir)
+  eInvoiceSeries String?
+  eArchiveSeries String?
+  /// e-Fatura mükellefine varsayılan senaryo
+  defaultProfile String   @default("TICARIFATURA")
+  updatedAt      DateTime @updatedAt
 }

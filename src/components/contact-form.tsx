@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Building2, CalendarDays, Coins, Hash, Landmark, List, Mail, MapPin, Phone, Plus, Printer, RotateCcw, Tag, Trash2, User } from "lucide-react";
 import { saveContactAction } from "@/app/actions/records";
+import { lookupTaxpayerAction } from "@/app/actions/einvoice";
 import { ActionForm, FormMessage } from "./forms";
 import { CitySelect, FormHeader, useRepeater } from "./record-forms";
 import { Button, FormRow, Input, Select, Textarea } from "./ui";
@@ -59,6 +60,18 @@ export function ContactForm({ values, categories, cancelHref }: { values: Contac
   const ibans = useRepeater(values.ibans.length ? values.ibans.map((iban) => ({ iban })) : [{ iban: "" }], { iban: "" });
   const people = useRepeater(values.people, { name: "", email: null, phone: null, notes: null });
   const isNatural = personType === "NATURAL";
+  const [lookup, setLookup] = useState<{ message?: string; error?: string } | null>(null);
+  const [looking, startLookup] = useTransition();
+  /** NES mükellef sorgusu: unvan boşsa doldurulur, e-Fatura mükellefiyeti gösterilir */
+  const onLookup = () =>
+    startLookup(async () => {
+      const vkn = (document.getElementById("taxNumber") as HTMLInputElement | null)?.value ?? "";
+      const r = await lookupTaxpayerAction(vkn);
+      setLookup(r.error ? { error: r.error } : { message: r.message });
+      const titleEl = document.getElementById("title") as HTMLInputElement | null;
+      if (r.title && titleEl && !titleEl.value.trim()) titleEl.value = r.title;
+      if (vkn.replace(/\s/g, "").length === 11) setPersonType("NATURAL");
+    });
 
   return (
     <ActionForm action={saveContactAction} className="gap-0">
@@ -67,8 +80,11 @@ export function ContactForm({ values, categories, cancelHref }: { values: Contac
           {values.id && <input type="hidden" name="id" value={values.id} />}
           <input type="hidden" name="kind" value={values.kind} />
           <FormHeader cancelHref={cancelHref}>
-            <FormRow label="VKN / TCKN" htmlFor="taxNumber" icon={<Hash />} error={s.fieldErrors?.taxNumber} hint="Kontrol hanesi doğrulanır. NES bağlandığında (Faz 3) mükellef bilgileri otomatik doldurulacak.">
-              <Input id="taxNumber" name="taxNumber" inputMode="numeric" maxLength={11} defaultValue={values.taxNumber ?? ""} />
+            <FormRow label="VKN / TCKN" htmlFor="taxNumber" icon={<Hash />} error={s.fieldErrors?.taxNumber} hint={lookup?.message ?? lookup?.error ?? "Kontrol hanesi doğrulanır. Sorgula: NES üzerinden e-Fatura mükellefiyeti ve unvan."}>
+              <div className="flex gap-2">
+                <Input id="taxNumber" name="taxNumber" inputMode="numeric" maxLength={11} defaultValue={values.taxNumber ?? ""} />
+                <Button type="button" variant="secondary" disabled={looking} onClick={onLookup}>{looking ? "…" : "Sorgula"}</Button>
+              </div>
             </FormRow>
           </FormHeader>
           {(s.error || s.message) && <div className="px-4 pt-3"><FormMessage state={s} /></div>}

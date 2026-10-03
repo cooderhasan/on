@@ -156,7 +156,10 @@ export async function ContactDetailPage({ kind, params }: { kind: ContactKind; p
           </div>
           <dl className="py-3">
             <InfoRow label="Türü" icon={<Building2 />}>{c.personType === "NATURAL" ? "Gerçek kişi" : "Tüzel kişi"}</InfoRow>
-            <InfoRow label="VKN / TCKN" icon={<Hash />}>{c.taxNumber && <span className="font-mono">{c.taxNumber}</span>}</InfoRow>
+            <InfoRow label="VKN / TCKN" icon={<Hash />}>
+              {c.taxNumber && <span className="font-mono">{c.taxNumber}</span>}
+              {c.eInvoiceCheckedAt && <span className={`ml-3 rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white ${c.eInvoiceAlias ? "bg-success" : "bg-text-3"}`}>{c.eInvoiceAlias ? "e-Fatura mükellefi" : "e-Arşiv"}</span>}
+            </InfoRow>
             <InfoRow label="Vergi dairesi" icon={<Landmark />}>{c.taxOffice}</InfoRow>
             <InfoRow label="E-posta" icon={<Mail />}>{c.email && <a href={`mailto:${c.email}`} className="text-accent hover:underline">{c.email}</a>}</InfoRow>
             <InfoRow label="Telefon" icon={<Phone />}>{c.phone && <a href={`tel:${c.phone}`} className="text-accent hover:underline">{c.phone}</a>}</InfoRow>

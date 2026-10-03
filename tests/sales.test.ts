@@ -30,7 +30,7 @@ const form = (o: Record<string, string | string[]>) => {
 };
 const line = (o: Partial<ParsedLine> = {}): ParsedLine => ({
   productId: null, name: "Hizmet", description: null, quantity: "1", unit: "C62", unitPrice: "100", discountType: null, discountValue: null,
-  vatRate: 20, otvRate: null, withholdingRate: null, withholdingCode: null, ...o,
+  vatRate: 20, vatExemptionCode: null, otvRate: null, otvCode: null, withholdingRate: null, withholdingCode: null, ...o,
 });
 
 async function setup() {

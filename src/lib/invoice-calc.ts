@@ -133,14 +133,3 @@ export function calculateDocument(lines: LineInput[], doc: { discountType?: Disc
     },
   };
 }
-
-/** Tevkifat oranları (10'da kaç). Kod GİB listesinden seçilir; liste Faz 3'te NES dokümanıyla eklenecek. */
-export const WITHHOLDING_RATES = [
-  { value: 20, label: "2/10" },
-  { value: 30, label: "3/10" },
-  { value: 40, label: "4/10" },
-  { value: 50, label: "5/10" },
-  { value: 70, label: "7/10" },
-  { value: 90, label: "9/10" },
-  { value: 100, label: "10/10" },
-] as const;

@@ -12,6 +12,7 @@ import { calculateDocument } from "@/lib/invoice-calc";
 import { parseMoneyInput } from "@/lib/money";
 import type { documentHeaderSchema, ParsedLine } from "@/lib/document-form";
 import { invoicePaid, invoiceSign } from "./ledger";
+import { isLockedEDoc, isVoidEDoc } from "@/lib/edoc-status";
 
 export const PAGE_SIZE = 25;
 const D = (v: { toString(): string } | null | undefined) => new Decimal(v?.toString() ?? 0);
@@ -19,9 +20,10 @@ const D = (v: { toString(): string } | null | undefined) => new Decimal(v?.toStr
 const perms = (direction: InvoiceDirection): { read: Permission; write: Permission } =>
   direction === "SALE" ? { read: "sales.read", write: "sales.write" } : { read: "expenses.read", write: "expenses.write" };
 
-/** Resmileşmiş (e-belge gönderilmiş) fatura değiştirilemez / silinemez */
-const LOCKED = ["QUEUED", "SENT", "ACCEPTED"] as const;
-const isLocked = (s: string) => (LOCKED as readonly string[]).includes(s);
+/** Gönderilmiş / resmileşmiş / reddedilmiş / iptal edilmiş e-belge değiştirilemez (bkz. edoc-status) */
+const isLocked = isLockedEDoc;
+/** Silinebilir: hiç gönderilmemiş, hatalı ya da hukuki etkisi kalmamış (ret / iptal) */
+const isDeletable = (s: string) => s === "NONE" || s === "FAILED" || isVoidEDoc(s);
 
 export type PaymentFilter = "open" | "overdue" | "paid";
 
@@ -61,7 +63,8 @@ export async function listInvoices(user: CurrentUser, direction: InvoiceDirectio
   const today = startOfToday();
   const rows = all
     .map((i) => {
-      const remaining = D(i.payableTotal).minus(paid.get(i.id)!);
+      // Reddedilen / iptal edilen faturadan alacak kalmaz
+      const remaining = isVoidEDoc(i.eDocStatus) ? new Decimal(0) : D(i.payableTotal).minus(paid.get(i.id)!);
       return { ...i, paid: paid.get(i.id)!, remaining, overdue: remaining.greaterThan(0) && i.dueDate < today };
     })
     .filter((i) => (f.payment === "paid" ? !i.remaining.greaterThan(0) : f.payment === "open" ? i.remaining.greaterThan(0) : f.payment === "overdue" ? i.overdue : true));
@@ -102,8 +105,8 @@ export async function getInvoice(user: CurrentUser, id: string) {
   if (!inv) throw new AppError("NOT_FOUND", "Fatura bulunamadı.");
   assertCan(user, perms(inv.direction).read);
   const paid = inv.transactions.reduce((a, t) => a.plus(D(t.appliedAmount)), new Decimal(0));
-  const remaining = D(inv.payableTotal).minus(paid);
-  return { ...inv, paid, remaining, overdue: remaining.greaterThan(0) && inv.dueDate < startOfToday(), locked: isLocked(inv.eDocStatus) };
+  const remaining = isVoidEDoc(inv.eDocStatus) ? new Decimal(0) : D(inv.payableTotal).minus(paid);
+  return { ...inv, paid, remaining, deletable: isDeletable(inv.eDocStatus), overdue: remaining.greaterThan(0) && inv.dueDate < startOfToday(), locked: isLocked(inv.eDocStatus) };
 }
 
 export interface SaveInvoiceInput {
@@ -164,6 +167,8 @@ export async function saveInvoice(user: CurrentUser, id: string | null, input: S
     orderNo: header.orderNo,
     orderDate: header.orderDate ? new Date(header.orderDate) : null,
     stockMode: header.stockMode,
+    returnRefNo: header.kind === "RETURN" ? header.returnRefNo : null,
+    returnRefDate: header.kind === "RETURN" && header.returnRefDate ? new Date(header.returnRefDate) : null,
     discountType: input.discount.discountType,
     discountValue: input.discount.discountValue,
     grossTotal: t.grossTotal.toString(),
@@ -187,6 +192,8 @@ export async function saveInvoice(user: CurrentUser, id: string | null, input: S
     discountValue: l.discountValue,
     vatRate: l.vatRate,
     otvRate: l.otvRate,
+    otvCode: l.otvCode,
+    vatExemptionCode: l.vatExemptionCode,
     withholdingCode: l.withholdingCode,
     withholdingRate: l.withholdingRate,
     grossAmount: calc.lines[i]!.grossAmount.toString(),
@@ -203,13 +210,15 @@ export async function saveInvoice(user: CurrentUser, id: string | null, input: S
     if (id) {
       const existing = await tx.invoice.findUnique({ where: { id }, select: { direction: true, eDocStatus: true, transactions: { select: { appliedAmount: true } } } });
       if (!existing || existing.direction !== direction) throw new AppError("NOT_FOUND", "Fatura bulunamadı.");
-      if (isLocked(existing.eDocStatus)) throw new AppError("CONFLICT", "Resmileşmiş fatura değiştirilemez. Gerekirse iade faturası kesin.");
+      if (isLocked(existing.eDocStatus)) throw new AppError("CONFLICT", "Gönderilmiş / resmileşmiş fatura değiştirilemez. Gerekirse iade faturası kesin.");
       const paid = existing.transactions.reduce((a, x) => a.plus(D(x.appliedAmount)), new Decimal(0));
       if (t.payableTotal.lessThan(paid)) throw new AppError("VALIDATION", "Fatura tutarı, yapılmış tahsilat / ödemelerin altına düşemez. Önce tahsilatı düzeltin.");
       await revertStock(tx, id);
       await tx.documentLine.deleteMany({ where: { invoiceId: id } });
       await tx.invoiceTag.deleteMany({ where: { invoiceId: id } });
-      await tx.invoice.update({ where: { id }, data: { ...data, lines: { create: lineData }, tags: { create: tagIds.map((tagId) => ({ tagId })) } } });
+      // Hatalı gönderilmiş fatura düzeltildi: içerik değiştiği için bir sonraki gönderim yeni UUID ile yapılır
+      const eDocReset = existing.eDocStatus === "FAILED" ? { eDocStatus: "NONE" as const, eDocUuid: null, eDocError: null } : {};
+      await tx.invoice.update({ where: { id }, data: { ...data, ...eDocReset, lines: { create: lineData }, tags: { create: tagIds.map((tagId) => ({ tagId })) } } });
     } else {
       const inv = await tx.invoice.create({ data: { ...data, createdById: user.id, quoteId: input.quoteId ?? null, lines: { create: lineData }, tags: { create: tagIds.map((tagId) => ({ tagId })) } } });
       invoiceId = inv.id;
@@ -243,7 +252,7 @@ export async function deleteInvoice(user: CurrentUser, id: string) {
   const inv = await db.invoice.findUnique({ where: { id }, select: { direction: true, eDocStatus: true, _count: { select: { transactions: true } } } });
   if (!inv) throw new AppError("NOT_FOUND", "Fatura bulunamadı.");
   assertCan(user, perms(inv.direction).write);
-  if (isLocked(inv.eDocStatus)) throw new AppError("CONFLICT", "Resmileşmiş fatura silinemez. Gerekirse iade faturası kesin.");
+  if (!isDeletable(inv.eDocStatus)) throw new AppError("CONFLICT", "Gönderilmiş / resmileşmiş fatura silinemez. Gerekirse iade faturası kesin veya e-Arşiv'i iptal edin.");
   if (inv._count.transactions > 0) throw new AppError("CONFLICT", "Bu faturaya bağlı tahsilat / ödeme var. Önce onları silin.");
   await db.$transaction(async (tx) => {
     await revertStock(tx, id);

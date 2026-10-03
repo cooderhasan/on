@@ -9,7 +9,8 @@ import { ActionForm, FormMessage } from "./forms";
 import { FormHeader } from "./record-forms";
 import { Button, FormRow, Input, Select, Textarea } from "./ui";
 import { Money } from "./money";
-import { calculateDocument, WITHHOLDING_RATES } from "@/lib/invoice-calc";
+import { calculateDocument } from "@/lib/invoice-calc";
+import { OTV_CODES, VAT_EXEMPTION_CODES, WITHHOLDING_CODES, withholdingByCode } from "@/lib/gib-codes";
 import { parseMoneyInput } from "@/lib/money";
 import { CURRENCIES, UNITS, VAT_RATES } from "@/lib/units";
 import { cn } from "@/lib/cn";
@@ -25,7 +26,9 @@ export interface LineValue {
   discountType: "PERCENT" | "AMOUNT" | "";
   discountValue: string;
   vatRate: number;
+  vatExemptionCode: string;
   otvRate: string;
+  otvCode: string;
   withholdingRate: string;
   withholdingCode: string;
   /** Hangi ek alanlar açık */
@@ -47,6 +50,8 @@ export interface DocumentFormValues {
   notes: string | null;
   orderNo: string | null;
   orderDate: string | null;
+  returnRefNo?: string | null;
+  returnRefDate?: string | null;
   stockMode: "WITH_INVOICE" | "NONE";
   discountType: "PERCENT" | "AMOUNT" | null;
   discountValue: string | null;
@@ -92,14 +97,14 @@ export function DocumentForm({
   const [showDocDisc, setShowDocDisc] = useState(Boolean(values.discountValue));
   const [menuFor, setMenuFor] = useState<number | null>(null);
   const [lines, setLines] = useState<LineValue[]>(() => {
-    const init = values.lines.length ? values.lines : [{ productId: "", name: "", description: null, quantity: "1", unit: "C62", unitPrice: "", discountType: "" as const, discountValue: "", vatRate: 20, otvRate: "", withholdingRate: "", withholdingCode: "" }];
+    const init = values.lines.length ? values.lines : [{ productId: "", name: "", description: null, quantity: "1", unit: "C62", unitPrice: "", discountType: "" as const, discountValue: "", vatRate: 20, vatExemptionCode: "", otvRate: "", otvCode: "0074", withholdingRate: "", withholdingCode: "" }];
     return init.map((l, i) => ({ ...l, key: i, show: { desc: Boolean(l.description), disc: Boolean(l.discountValue), otv: Boolean(l.otvRate), wh: Boolean(l.withholdingRate) } }));
   });
   const [nextKey, setNextKey] = useState(lines.length);
 
   const update = (key: number, patch: Partial<LineValue>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const addLine = () => {
-    setLines((ls) => [...ls, { key: nextKey, productId: "", name: "", description: null, quantity: "1", unit: "C62", unitPrice: "", discountType: "", discountValue: "", vatRate: 20, otvRate: "", withholdingRate: "", withholdingCode: "", show: {} }]);
+    setLines((ls) => [...ls, { key: nextKey, productId: "", name: "", description: null, quantity: "1", unit: "C62", unitPrice: "", discountType: "", discountValue: "", vatRate: 20, vatExemptionCode: "", otvRate: "", otvCode: "0074", withholdingRate: "", withholdingCode: "", show: {} }]);
     setNextKey((k) => k + 1);
   };
   const removeLine = (key: number) => setLines((ls) => (ls.length > 1 ? ls.filter((l) => l.key !== key) : ls));
@@ -123,7 +128,7 @@ export function DocumentForm({
           discountValue: l.show.disc && l.discountValue ? dec(l.discountValue) : null,
           vatRate: l.vatRate,
           otvRate: l.show.otv && l.otvRate ? dec(l.otvRate) : null,
-          withholdingRate: l.show.wh && l.withholdingRate ? Number(l.withholdingRate) : null,
+          withholdingRate: l.show.wh && l.withholdingCode ? (withholdingByCode(l.withholdingCode)?.rate ?? (l.withholdingRate ? Number(l.withholdingRate) : null)) : null,
         })),
         { discountType: showDocDisc && discValue ? discType || "PERCENT" : null, discountValue: showDocDisc && discValue ? dec(discValue) : null },
       ),
@@ -227,6 +232,14 @@ export function DocumentForm({
                   {!isQuote && !showOrder && <Button type="button" variant="secondary" size="sm" onClick={() => setShowOrder(true)}><Plus className="size-3" /> Sipariş bilgisi ekle</Button>}
                 </div>
               </FormRow>
+              {!isQuote && values.kind === "RETURN" && (
+                <FormRow label="İade edilen fatura" htmlFor="returnRefNo" hint="e-Fatura / e-Arşiv iade faturasında zorunlu: iade edilen faturanın numarası ve tarihi." error={s.fieldErrors?.returnRefNo ?? s.fieldErrors?.returnRefDate}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input id="returnRefNo" name="returnRefNo" maxLength={40} defaultValue={values.returnRefNo ?? ""} placeholder="Fatura no" className="font-mono" />
+                    <Input name="returnRefDate" type="date" defaultValue={values.returnRefDate ?? ""} aria-label="İade edilen fatura tarihi" />
+                  </div>
+                </FormRow>
+              )}
               {showNo && (
                 <FormRow label={isQuote ? "Teklif no" : "Fatura no"} htmlFor="docNo" hint={isQuote ? undefined : "e-Fatura / e-Arşiv'de numara NES tarafından verilir; boş bırakabilirsiniz."}>
                   <Input id="docNo" name="docNo" maxLength={40} defaultValue={values.docNo ?? ""} className="max-w-60" />
@@ -317,7 +330,9 @@ export function DocumentForm({
                   <input type="hidden" name="line_discType" value={l.show.disc ? l.discountType || "PERCENT" : ""} />
                   <input type="hidden" name="line_discValue" value={l.show.disc ? l.discountValue : ""} />
                   <input type="hidden" name="line_otv" value={l.show.otv ? l.otvRate : ""} />
-                  <input type="hidden" name="line_whRate" value={l.show.wh ? l.withholdingRate : ""} />
+                  <input type="hidden" name="line_otvCode" value={l.show.otv ? l.otvCode : ""} />
+                  <input type="hidden" name="line_vatExempt" value={l.vatRate === 0 ? l.vatExemptionCode : ""} />
+                  <input type="hidden" name="line_whRate" value={l.show.wh && l.withholdingCode === "650" ? l.withholdingRate : ""} />
                   <input type="hidden" name="line_whCode" value={l.show.wh ? l.withholdingCode : ""} />
                   <input type="hidden" name="line_desc" value={l.show.desc ? (l.description ?? "") : ""} />
                   <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(0,3fr)_90px_100px_130px_110px_130px_64px] lg:items-center">
@@ -349,7 +364,7 @@ export function DocumentForm({
                       )}
                     </div>
                   </div>
-                  {(l.show.desc || l.show.disc || l.show.otv || l.show.wh) && (
+                  {(l.show.desc || l.show.disc || l.show.otv || l.show.wh || l.vatRate === 0) && (
                     <div className="mt-2 flex flex-wrap items-center gap-3 rounded bg-card-muted px-3 py-2 text-xs">
                       {l.show.desc && (
                         <ExtraField label="Açıklama" onRemove={() => update(l.key, { show: { ...l.show, desc: false } })}>
@@ -365,18 +380,30 @@ export function DocumentForm({
                           <Input value={l.discountValue} onChange={(e) => update(l.key, { discountValue: e.target.value })} inputMode="decimal" className="h-8 w-24 font-mono" aria-label="İndirim" />
                         </ExtraField>
                       )}
+                      {l.vatRate === 0 && (
+                        <span className="flex items-center gap-1.5">
+                          <span className="font-semibold uppercase text-text-2">KDV istisna sebebi</span>
+                          <Select value={l.vatExemptionCode} onChange={(e) => update(l.key, { vatExemptionCode: e.target.value })} className="h-8 w-72" aria-label="KDV istisna sebebi">
+                            <option value="">Seçin…</option>
+                            {VAT_EXEMPTION_CODES.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.label}</option>)}
+                          </Select>
+                        </span>
+                      )}
                       {l.show.otv && (
-                        <ExtraField label="ÖTV %" onRemove={() => update(l.key, { show: { ...l.show, otv: false } })}>
-                          <Input value={l.otvRate} onChange={(e) => update(l.key, { otvRate: e.target.value })} inputMode="decimal" className="h-8 w-20 font-mono" aria-label="ÖTV oranı" />
+                        <ExtraField label="ÖTV" onRemove={() => update(l.key, { show: { ...l.show, otv: false } })}>
+                          <Select value={l.otvCode} onChange={(e) => update(l.key, { otvCode: e.target.value })} className="h-8 w-56" aria-label="ÖTV listesi">
+                            {OTV_CODES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+                          </Select>
+                          <Input value={l.otvRate} onChange={(e) => update(l.key, { otvRate: e.target.value })} inputMode="decimal" placeholder="%" className="h-8 w-16 font-mono" aria-label="ÖTV oranı" />
                         </ExtraField>
                       )}
                       {l.show.wh && (
                         <ExtraField label="Tevkifat" onRemove={() => update(l.key, { show: { ...l.show, wh: false } })}>
-                          <Select value={l.withholdingRate} onChange={(e) => update(l.key, { withholdingRate: e.target.value })} className="h-8 w-20" aria-label="Tevkifat oranı">
-                            <option value="">Oran</option>
-                            {WITHHOLDING_RATES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                          <Select value={l.withholdingCode} onChange={(e) => update(l.key, { withholdingCode: e.target.value })} className="h-8 w-72" aria-label="Tevkifat kodu">
+                            <option value="">Kod seçin…</option>
+                            {WITHHOLDING_CODES.map((w) => <option key={w.code} value={w.code}>{w.code} · {w.rate ? `${w.rate / 10}/10` : "oran girilir"} · {w.label}</option>)}
                           </Select>
-                          <Input value={l.withholdingCode} onChange={(e) => update(l.key, { withholdingCode: e.target.value })} maxLength={10} placeholder="GİB kodu" className="h-8 w-24" aria-label="Tevkifat kodu" />
+                          {l.withholdingCode === "650" && <Input value={l.withholdingRate} onChange={(e) => update(l.key, { withholdingRate: e.target.value })} inputMode="numeric" placeholder="%" className="h-8 w-16 font-mono" aria-label="Tevkifat oranı (%)" />}
                         </ExtraField>
                       )}
                       {(l.show.disc || l.show.wh || l.show.otv) && calc.lines[idx] && (

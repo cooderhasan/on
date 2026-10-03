@@ -164,7 +164,7 @@ export async function QuoteFormPage({ params }: { params?: Promise<{ id: string 
       stockMode: "NONE", discountType: q.discountType, discountValue: q.discountValue?.toString() ?? null, tagIds: [],
       lines: q.lines.map((l) => ({
         productId: l.productId ?? "", name: l.name, description: l.description, quantity: l.quantity.toString().replace(".", ","), unit: l.unit, unitPrice: l.unitPrice.toString().replace(".", ","),
-        discountType: l.discountType ?? "", discountValue: l.discountValue?.toString().replace(".", ",") ?? "", vatRate: l.vatRate, otvRate: l.otvRate?.toString().replace(".", ",") ?? "",
+        discountType: l.discountType ?? "", discountValue: l.discountValue?.toString().replace(".", ",") ?? "", vatRate: l.vatRate, vatExemptionCode: l.vatExemptionCode ?? "", otvRate: l.otvRate?.toString().replace(".", ",") ?? "", otvCode: l.otvCode ?? "0074",
         withholdingRate: l.withholdingRate?.toString() ?? "", withholdingCode: l.withholdingCode ?? "",
       })),
     };
