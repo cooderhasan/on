@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/* Paraşüt düzeni: koyu sol menü, açık gri zemin, beyaz kartlar, küçük büyük-harf tablo başlıkları */
+:root {
+  --bg: #e4e4e4;
+  --card: #ffffff;
+  --card-muted: #f6f6f6;
+  --border: #e6e6e6;
+  --text: #3c3c3c;
+  --text-2: #6f6f6f;
+  --text-3: #a3a3a3;
+  --sidebar: #2b2b2b;
+  --sidebar-hover: #363636;
+  --sidebar-text: #c9c9c9;
+  --sidebar-sub: #232323;
+  /* ana işlem düğmesi (Paraşüt'teki koyu kahve-gri) */
+  --primary: #574c49;
+  --primary-hover: #463d3a;
+  --accent: #2a9fd6;
+  --teal: #29b6c6;
+  --success: #3cb878;
+  --danger: #e2685a;
+  --warning: #f0a33a;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-card-muted: var(--card-muted);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-sub: var(--sidebar-sub);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-accent: var(--accent);
+  --color-teal: var(--teal);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --font-sans: var(--font-roboto), system-ui, sans-serif;
+  --font-mono: var(--font-roboto-mono), ui-monospace, monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+/* Tutarlar: kuruş kısmı küçük ve soluk (Paraşüt'teki 3.800,00₺ görünümü) */
+.money {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.money .kurus {
+  font-weight: 400;
+  color: var(--text-3);
+  font-size: 0.85em;
+}

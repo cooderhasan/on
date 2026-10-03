@@ -1,0 +1,94 @@
+// Ön muhasebe — tek firma. Para tutarları Decimal(18,2) / kur Decimal(18,6); asla Float.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Firma (tek satır: id = "firma") ─────────────────────────
+
+/// Faturada satıcı bilgisi olarak kullanılır. Tek firma uygulaması → her zaman tek kayıt.
+model Company {
+  id          String   @id @default("firma")
+  /// Ticari unvan (faturada görünen)
+  title       String
+  /// 10 hane VKN veya 11 hane TCKN (şahıs şirketi)
+  taxNumber   String?
+  taxOffice   String?
+  address     String?
+  district    String?
+  city        String?
+  postalCode  String?
+  phone       String?
+  email       String?
+  website     String?
+  sector      String?
+  /// Mersis / ticaret sicil (faturada opsiyonel)
+  mersisNo    String?
+  tradeRegNo  String?
+  logoPath    String?
+  updatedAt   DateTime @updatedAt
+}
+
+// ── Kullanıcılar ve oturum ─────────────────────────────────
+
+/// ADMIN: her şey + kullanıcı/ayar · ACCOUNTANT: tüm muhasebe kayıtları · SALES: satış/müşteri/teklif · VIEWER: sadece görüntüleme
+enum UserRole {
+  ADMIN
+  ACCOUNTANT
+  SALES
+  VIEWER
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  /// scrypt: "salt:hash" (hex)
+  passwordHash String
+  role         UserRole  @default(VIEWER)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions  Session[]
+  auditLogs AuditLog[]
+}
+
+/// Sunucu tarafı oturum: çerezde yalnızca rastgele token durur, veritabanında SHA-256 özeti.
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  ip        String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Kritik işlemlerin kaydı (fatura resmileştirme, silme, ayar değişikliği, giriş…)
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}

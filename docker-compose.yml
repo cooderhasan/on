@@ -1,0 +1,22 @@
+# Yerel geliştirme veritabanı. Başlat: docker compose up -d
+# Proje adı sabit: aynı bilgisayardaki diğer projelerle (LEAD 55432, LEAD_BEN 55442) container / volume paylaşılmaz.
+name: muhasebe
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: muhasebe
+      POSTGRES_PASSWORD: muhasebe
+      POSTGRES_DB: muhasebe
+    ports: ["55452:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U muhasebe"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:
