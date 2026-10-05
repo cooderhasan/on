@@ -1,3 +1,4 @@
 # Linux container içinde çalışan dosyalar her zaman LF
 *.sh text eol=lf
 Dockerfile text eol=lf
+*.bat text eol=crlf

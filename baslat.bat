@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-title Ön Muhasebe
+title On Muhasebe
 docker info >nul 2>&1
 if errorlevel 1 (
   echo [HATA] Docker Desktop calismiyor. Acin, "Engine running" yazana kadar bekleyin, sonra tekrar calistirin.
@@ -10,13 +10,14 @@ if errorlevel 1 (
 )
 echo Veritabani baslatiliyor...
 docker compose up -d postgres
+rem Not: if bloklari icindeki echo satirlarinda parantez ^( ^) ile kacislanmali
 if not exist node_modules (
-  echo Paketler yukleniyor (ilk calistirma, birkac dakika)...
+  echo Paketler yukleniyor ^(ilk calistirma, birkac dakika^)...
   call npm install
 )
 echo Tablolar guncelleniyor...
 call npx prisma migrate deploy
-rem Şema değiştiyse veritabanı istemcisi yeniden üretilir (eski istemci "Unknown argument" hatası verir)
+rem Sema degistiyse veritabani istemcisi yeniden uretilir
 call npx prisma generate
 echo.
 echo Uygulama baslatiliyor. Tarayici birkac saniye icinde acilacak: http://localhost:3000
