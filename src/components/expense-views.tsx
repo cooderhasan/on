@@ -271,7 +271,13 @@ export async function IncomingListPage({ searchParams }: { searchParams: Promise
                     <Td className="text-right"><Money value={r.payableAmount} currency={r.currency} /></Td>
                     <Td className="text-right">
                       {r.status === "PROCESSED" && r.purchaseInvoiceId ? (
-                        <Link href={`/giderler/${r.purchaseInvoiceId}`} className="text-xs text-accent hover:underline">Alış faturasını aç</Link>
+                        <span className="flex flex-col items-end gap-0.5 text-xs">
+                          <Link href={`/giderler/${r.purchaseInvoiceId}`} className="text-accent hover:underline">Alış faturasını aç</Link>
+                          <span className="flex gap-2">
+                            <a href={`/api/einvoice/incoming/${r.id}/html`} target="_blank" rel="noopener" className="text-accent hover:underline">Görüntüle</a>
+                            <a href={`/api/einvoice/incoming/${r.id}/pdf`} target="_blank" rel="noopener" className="text-accent hover:underline">PDF</a>
+                          </span>
+                        </span>
                       ) : (
                         canWrite && <IncomingActions id={r.id} status={r.status} canAnswer={r.profile === "TICARIFATURA" && (r.answer === "Waiting" || r.answer === "None" || !r.answer)} categories={categories.map((c) => ({ id: c.id, name: c.name }))} />
                       )}

@@ -44,7 +44,7 @@ export default async function Page(props: PageProps<"/gelen-e-irsaliyeler">) {
                       {r.documentNumber ?? "—"}
                       <div className="mt-0.5 flex gap-2 font-sans">
                         <a href={`/api/edespatch/incoming/${r.id}/html`} target="_blank" rel="noopener" className="text-accent hover:underline">Görüntüle</a>
-                        <a href={`/api/edespatch/incoming/${r.id}/pdf`} className="text-accent hover:underline">PDF</a>
+                        <a href={`/api/edespatch/incoming/${r.id}/pdf`} target="_blank" rel="noopener" className="text-accent hover:underline">PDF</a>
                       </div>
                     </Td>
                     <Td className="whitespace-nowrap">{fmtDate(r.issueDate)}</Td>

@@ -24,7 +24,7 @@ export function DespatchPanel({ waybillId, status, canSend, hasError }: { waybil
         {status !== "QUEUED" && (
           <div className="flex flex-wrap gap-2">
             <a href={`/api/edespatch/${waybillId}/html`} target="_blank" rel="noopener" className={linkBtn}><FileText className="size-3.5" /> Görüntüle</a>
-            <a href={`/api/edespatch/${waybillId}/pdf`} className={linkBtn}><FileDown className="size-3.5" /> PDF</a>
+            <a href={`/api/edespatch/${waybillId}/pdf`} target="_blank" rel="noopener" className={linkBtn}><FileDown className="size-3.5" /> PDF</a>
           </div>
         )}
         <ActionForm action={refreshDespatchAction} className="gap-1">

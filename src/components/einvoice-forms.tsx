@@ -87,7 +87,7 @@ export function EDocPanel({ invoiceId, status, profile, canSend, hasError }: { i
           {status !== "QUEUED" && (
             <>
               <a href={`/api/einvoice/${invoiceId}/html`} target="_blank" rel="noopener" className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-card px-3 text-[11px] font-semibold uppercase text-text-2 hover:bg-card-muted"><FileText className="size-3.5" /> Görüntüle</a>
-              <a href={`/api/einvoice/${invoiceId}/pdf`} className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-card px-3 text-[11px] font-semibold uppercase text-text-2 hover:bg-card-muted"><FileDown className="size-3.5" /> PDF</a>
+              <a href={`/api/einvoice/${invoiceId}/pdf`} target="_blank" rel="noopener" className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-card px-3 text-[11px] font-semibold uppercase text-text-2 hover:bg-card-muted"><FileDown className="size-3.5" /> PDF</a>
             </>
           )}
         </div>

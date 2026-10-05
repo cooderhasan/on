@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, CircleCheck, FileText, Package, Printer, User } from "lucide-react";
+import { AlertTriangle, CircleCheck, FileDown, FileText, Package, Printer, User } from "lucide-react";
 import { requireUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
 import { db } from "@/server/db";
@@ -181,7 +181,15 @@ export async function InvoiceDetailPage({ params, searchParams, direction = "SAL
             <h2 className="flex items-center gap-3 text-lg text-text"><FileText className="size-7 text-accent" /> {title}</h2>
             <div className="flex items-center gap-2">
               {canWrite && !inv.locked && <LinkButton href={`${BASE}/${inv.id}/duzenle`} variant="secondary">Düzenle</LinkButton>}
-              {direction === "PURCHASE" ? null : inv.eDocStatus === "NONE" || inv.eDocStatus === "FAILED" ? (
+              {direction === "PURCHASE" ? (
+                // Gelen e-faturadan oluştuysa tedarikçinin gönderdiği resmi belge (NES görüntüsü)
+                inv.incoming ? (
+                  <>
+                    <a href={`/api/einvoice/incoming/${inv.incoming.id}/html`} target="_blank" rel="noopener" className={buttonClass("secondary")}><FileText className="size-3.5" /> e-Faturayı göster</a>
+                    <a href={`/api/einvoice/incoming/${inv.incoming.id}/pdf`} target="_blank" rel="noopener" className={buttonClass("secondary")}><FileDown className="size-3.5" /> PDF</a>
+                  </>
+                ) : null
+              ) : inv.eDocStatus === "NONE" || inv.eDocStatus === "FAILED" ? (
                 <LinkButton href={`${BASE}/${inv.id}/yazdir`} variant="secondary" target="_blank"><Printer className="size-3.5" /> Yazdır</LinkButton>
               ) : (
                 // Gönderilmiş e-belgenin resmi görüntüsü NES'ten (kendi şablonumuz değil)

@@ -106,6 +106,7 @@ export async function getInvoice(user: CurrentUser, id: string) {
       warehouse: { select: { id: true, name: true } },
       quote: { select: { id: true, quoteNo: true } },
       recurring: { select: { templateId: true } },
+      incoming: { select: { id: true, documentNumber: true } },
     },
   });
   if (!inv) throw new AppError("NOT_FOUND", "Fatura bulunamadı.");

@@ -3,7 +3,7 @@ import { despatchDocument } from "@/server/services/edespatch";
 import { isAppError } from "@/lib/errors";
 
 /** e-İrsaliyenin NES görüntüsü (HTML göster / PDF indir) */
-export async function GET(_req: Request, ctx: RouteContext<"/api/edespatch/incoming/[id]/[format]">) {
+export async function GET(req: Request, ctx: RouteContext<"/api/edespatch/incoming/[id]/[format]">) {
   const user = await getCurrentUser();
   if (!user) return new Response("Oturum gerekli", { status: 401 });
   const { id, format } = await ctx.params;
@@ -13,7 +13,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/edespatch/incom
     return new Response(res.body, {
       headers: {
         "Content-Type": format === "pdf" ? "application/pdf" : "text/html; charset=utf-8",
-        "Content-Disposition": `${format === "pdf" ? "attachment" : "inline"}; filename="${encodeURIComponent(fileName)}"`,
+        "Content-Disposition": `${format === "pdf" && new URL(req.url).searchParams.get("indir") ? "attachment" : "inline"}; filename="${encodeURIComponent(fileName)}"`,
         "Cache-Control": "private, no-store",
         ...(format === "html" ? { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:" } : {}),
       },
