@@ -22,7 +22,7 @@ export async function testConnectionAction(): Promise<ActionState> {
     revalidatePath("/e-fatura-ayarlari");
     return {
       ok: true,
-      message: `Bağlantı başarılı (${r.env} ortamı).${r.isEInvoiceUser ? ` Firma e-Fatura mükellefi: ${r.title?.replace(/\.$/, "")}.` : " Firma VKN'si e-Fatura mükellefi olarak görünmüyor — yalnızca e-Arşiv kesebilirsiniz."}${r.senderAliases.length ? ` Gönderici etiketi: ${r.senderAliases[0]}` : ""}`,
+      message: `Bağlantı başarılı (${r.env} ortamı).${r.isEInvoiceUser ? ` Firma e-Fatura mükellefi: ${r.title?.replace(/\.$/, "")}.` : " Firma VKN'si e-Fatura mükellefi olarak görünmüyor — yalnızca e-Arşiv kesebilirsiniz."}${r.senderAliases.length ? ` Gönderici etiketi: ${r.senderAliases[0]}` : ""}${r.despatchAliases.length ? ` · e-İrsaliye kullanıcısı (etiket: ${r.despatchAliases[0]}).` : " · e-İrsaliye kullanıcısı olarak görünmüyor."}`,
     };
   });
 }

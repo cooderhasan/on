@@ -5,6 +5,7 @@ import type { CurrentUser } from "@/server/auth/session";
 import { refreshStatus } from "@/server/services/einvoice";
 import { syncIncoming } from "@/server/services/incoming";
 import { runRecurring } from "@/server/services/recurring";
+import { refreshDespatch, syncIncomingDespatches } from "@/server/services/edespatch";
 
 /**
  * Otomatik işler (Coolify zamanlanmış görevi /api/zamanlayici'yi çağırır):
@@ -23,7 +24,7 @@ export async function runScheduledJobs() {
   running = true;
   try {
     const recurring = await runRecurring();
-    const settings = await db.eInvoiceSettings.findUnique({ where: { id: "nes" }, select: { apiKeyEnc: true } });
+    const settings = await db.eInvoiceSettings.findUnique({ where: { id: "nes" }, select: { apiKeyEnc: true, despatchSenderAlias: true } });
     if (!settings?.apiKeyEnc) return { skipped: true as const, reason: "NES ayarı yok", recurring };
     const pending = await db.invoice.findMany({
       where: {
@@ -57,8 +58,32 @@ export async function runScheduledJobs() {
     } catch (err) {
       errors.push(`gelen: ${(err as Error).message.slice(0, 200)}`);
     }
+    // e-İrsaliye (firma e-İrsaliye kullanıcısıysa: gönderici etiketi tanımlı)
+    let despatches = 0;
+    let incomingDespatch: { created: number; updated: number } | null = null;
+    if (settings.despatchSenderAlias) {
+      const pendingD = await db.waybill.findMany({
+        where: { eDocUuid: { not: null }, OR: [{ eDocStatus: "QUEUED", updatedAt: { lt: minutesAgo(15) } }, { eDocStatus: "SENT", OR: [{ eDocCheckedAt: null }, { eDocCheckedAt: { lt: minutesAgo(20) } }] }] },
+        orderBy: { eDocSentAt: "asc" },
+        take: 50,
+        select: { id: true },
+      });
+      for (const w of pendingD) {
+        try {
+          await refreshDespatch(SYSTEM_USER, w.id);
+          despatches++;
+        } catch (err) {
+          errors.push(`irsaliye ${w.id}: ${(err as Error).message.slice(0, 200)}`);
+        }
+      }
+      try {
+        incomingDespatch = await syncIncomingDespatches(SYSTEM_USER);
+      } catch (err) {
+        errors.push(`gelen irsaliye: ${(err as Error).message.slice(0, 200)}`);
+      }
+    }
     if (errors.length) console.error("[zamanlayıcı]", errors);
-    return { skipped: false as const, recurring, refreshed, pending: pending.length, incoming, errors: errors.length };
+    return { skipped: false as const, recurring, refreshed, pending: pending.length, incoming, despatches, incomingDespatch, errors: errors.length };
   } finally {
     running = false;
   }

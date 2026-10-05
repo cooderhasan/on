@@ -4,10 +4,10 @@ import { decryptSecret } from "@/server/crypto";
 import { AppError } from "@/lib/errors";
 
 /**
- * NES REST istemcisi. Kaynak: developertest.nes.com.tr (OpenAPI: {apiUrl}{einvoice|earchive}/v1.swagger.taged.json).
+ * NES REST istemcisi. Kaynak: developertest.nes.com.tr (OpenAPI: {apiUrl}{einvoice|earchive|edespatch}/v1.swagger.taged.json).
  * Kimlik: Authorization: Bearer {API anahtarı}. Test: https://apitest.nes.com.tr/  Canlı: https://api.nes.com.tr/
  */
-export type NesService = "einvoice" | "earchive";
+export type NesService = "einvoice" | "earchive" | "edespatch";
 
 export interface NesConfig {
   apiUrl: string;
@@ -16,6 +16,8 @@ export interface NesConfig {
   eInvoiceSeries: string | null;
   eArchiveSeries: string | null;
   defaultProfile: string;
+  despatchSenderAlias: string | null;
+  despatchSeries: string | null;
 }
 
 export async function getNesConfig(): Promise<NesConfig> {
@@ -27,7 +29,7 @@ export async function getNesConfig(): Promise<NesConfig> {
   } catch {
     throw new AppError("INTERNAL", "Kayıtlı API anahtarı çözülemedi (ENCRYPTION_KEY değişmiş olabilir). Anahtarı yeniden girin.");
   }
-  return { apiUrl: s.apiUrl.endsWith("/") ? s.apiUrl : `${s.apiUrl}/`, apiKey, senderAlias: s.senderAlias, eInvoiceSeries: s.eInvoiceSeries, eArchiveSeries: s.eArchiveSeries, defaultProfile: s.defaultProfile };
+  return { apiUrl: s.apiUrl.endsWith("/") ? s.apiUrl : `${s.apiUrl}/`, apiKey, senderAlias: s.senderAlias, eInvoiceSeries: s.eInvoiceSeries, eArchiveSeries: s.eArchiveSeries, defaultProfile: s.defaultProfile, despatchSenderAlias: s.despatchSenderAlias, despatchSeries: s.despatchSeries };
 }
 
 /** NES hata gövdesinden okunabilir mesaj (biçim sabit değil: message / title / detail / errors) */
@@ -81,9 +83,9 @@ export class NesClient {
     return (text ? JSON.parse(text) : null) as T;
   }
 
-  /** Mükellef sorgusu. Kayıtlı değilse null. aliasType: Pk (posta kutusu), Gb (gönderici), All */
-  async queryUser(identifier: string, aliasType: "Pk" | "Gb" | "All" = "All"): Promise<NesUserInfo | null> {
-    const res = await this.call(`einvoice/v1/users/${encodeURIComponent(identifier)}/${aliasType}`);
+  /** Mükellef sorgusu (e-Fatura veya e-İrsaliye). Kayıtlı değilse null. aliasType: Pk (posta kutusu), Gb (gönderici), All */
+  async queryUser(identifier: string, aliasType: "Pk" | "Gb" | "All" = "All", service: "einvoice" | "edespatch" = "einvoice"): Promise<NesUserInfo | null> {
+    const res = await this.call(`${service}/v1/users/${encodeURIComponent(identifier)}/${aliasType}`);
     if (res.status === 404) return null;
     const text = await res.text();
     if (!res.ok) throw new NesError(res.status, nesErrorMessage(res.status, text));
@@ -95,15 +97,17 @@ export class NesClient {
   /** Belge yükler ve (IsDirectSend) resmileştirir */
   async upload(service: NesService, xml: string, opts: { senderAlias?: string | null; receiverAlias?: string | null; recordId: string }): Promise<{ uuid: string; documentNumber: string | null }> {
     const fd = new FormData();
-    fd.append("File", new Blob([xml], { type: "application/xml" }), "fatura.xml");
+    fd.append("File", new Blob([xml], { type: "application/xml" }), service === "edespatch" ? "irsaliye.xml" : "fatura.xml");
     fd.append("IsDirectSend", "true");
     fd.append("PreviewType", "None");
     fd.append("SourceApp", "OnMuhasebe");
     fd.append("SourceAppRecordId", opts.recordId);
-    if (service === "einvoice") {
+    if (service === "einvoice" || service === "edespatch") {
       if (opts.senderAlias) fd.append("SenderAlias", opts.senderAlias);
       if (opts.receiverAlias) fd.append("ReceiverAlias", opts.receiverAlias);
     }
+    // e-İrsaliye yüklemesinde zorunlu alan: alıcıyı NES portalında firma olarak kaydetme
+    if (service === "edespatch") fd.append("AutoSaveCompany", "false");
     const r = await this.json<{ uuid: string; documentNumber?: string | null }>(`${service}/v1/uploads/document`, { method: "POST", body: fd });
     return { uuid: r.uuid, documentNumber: r.documentNumber ?? null };
   }
@@ -153,9 +157,36 @@ export class NesClient {
     });
   }
 
+  // ── e-İrsaliye ──
+
+  /** Giden e-İrsaliye detayı (durum). Bulunamazsa null. */
+  async outgoingDespatch(uuid: string): Promise<NesOutgoingDespatch | null> {
+    const res = await this.call(`edespatch/v1/outgoing/despatches/${uuid}`);
+    if (res.status === 404) return null;
+    const text = await res.text();
+    if (!res.ok) throw new NesError(res.status, nesErrorMessage(res.status, text));
+    return JSON.parse(text) as NesOutgoingDespatch;
+  }
+
+  /** Gelen e-İrsaliyeler (sayfalı, en yeni önce) */
+  async incomingDespatches(page: number, pageSize: number): Promise<NesIncomingDespatchPage> {
+    const q = new URLSearchParams({ sort: "CreatedAt desc", page: String(page), pageSize: String(pageSize) });
+    return this.json<NesIncomingDespatchPage>(`edespatch/v1/incoming/despatches?${q.toString()}`);
+  }
+
+  async incomingDespatchXml(uuid: string): Promise<string> {
+    const res = await this.call(`edespatch/v1/incoming/despatches/${uuid}/xml`, { headers: { Accept: "application/xml" } }, 60_000);
+    const text = await res.text();
+    if (!res.ok) throw new NesError(res.status, nesErrorMessage(res.status, text));
+    return text;
+  }
+
   /** PDF / HTML görüntü (ham yanıt; çağıran akıtır) */
   async document(service: NesService, uuid: string, format: "pdf" | "html", direction: "outgoing" | "incoming" = "outgoing"): Promise<Response> {
-    const path = service === "earchive" ? `earchive/v1/invoices/${uuid}/${format}` : `einvoice/v1/${direction}/invoices/${uuid}/${format}`;
+    const path =
+      service === "earchive" ? `earchive/v1/invoices/${uuid}/${format}`
+      : service === "edespatch" ? `edespatch/v1/${direction}/despatches/${uuid}/${format}`
+      : `einvoice/v1/${direction}/invoices/${uuid}/${format}`;
     const res = await this.call(path, { headers: { Accept: format === "pdf" ? "application/pdf" : "text/html" } }, 60_000);
     if (!res.ok) throw new NesError(res.status, nesErrorMessage(res.status, await res.text()));
     return res;
@@ -203,6 +234,31 @@ export interface NesIncomingPage {
     documentAnswer?: string;
     accountingSupplierParty?: { partyIdentification?: string; partyName?: string | null; firstName?: string | null; familyName?: string | null };
     taxes?: Array<{ taxTypeCode?: string; taxableAmount?: number; taxAmount?: number }>;
+  }>;
+}
+
+export interface NesOutgoingDespatch {
+  id: string;
+  documentNumber?: string | null;
+  outgoingStatus?: string;
+  recordStatus?: string;
+  /** Alıcının irsaliye yanıtı: None / Waiting / Answered */
+  despatchAnswer?: string;
+  errorDescription?: string | null;
+  outgoingEnvelope?: { description?: string | null; code?: string | null } | null;
+}
+
+export interface NesIncomingDespatchPage {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  data: Array<{
+    id: string;
+    createdAt: string;
+    issueDate: string;
+    documentNumber?: string | null;
+    despatchAnswer?: string;
+    despatchSupplierParty?: { partyIdentification?: string; partyName?: string | null; firstName?: string | null; familyName?: string | null };
   }>;
 }
 

@@ -16,6 +16,9 @@ import { archivePriceListAction, deleteTransferAction, deleteWaybillAction } fro
 import { Button, buttonClass, Card, CardHeader, EmptyState, LinkButton, PageHeader, Td, Th } from "./ui";
 import { buildHref, InfoRow, ListFooter, ListToolbar } from "./list";
 import { ConfirmDelete } from "./money-forms";
+import { DespatchPanel } from "./edespatch-forms";
+import { DocStatusBadge } from "./invoice-views";
+import { isLockedEDoc } from "@/lib/edoc-status";
 import { PriceListForm, PriceListItemsForm, TransferForm, WarehouseForm, WarehouseStatusButton, WaybillForm, type WaybillFormValues } from "./stock-forms";
 import { fmtDate } from "./invoice-views";
 import { unitLabel } from "@/lib/units";
@@ -333,7 +336,7 @@ export async function WaybillListPage({ searchParams, direction }: { searchParam
                       <Link href={`${M.base}/${w.id}`} className="font-medium uppercase text-text hover:text-accent">{w.contact.title}</Link>
                       <p className="text-xs text-text-3">{w._count.lines} kalem · {w.warehouse.name}</p>
                     </Td>
-                    <Td className="font-mono text-xs">{w.waybillNo ?? "—"}</Td>
+                    <Td className="font-mono text-xs">{w.waybillNo ?? "—"}{direction === "SALE" && w.eDocStatus !== "NONE" && <div className="mt-0.5 font-sans"><DocStatusBadge status={w.eDocStatus} profile="IRSALIYE" /></div>}</Td>
                     <Td>{fmtDate(w.dispatchDate)}</Td>
                     <Td>{w.invoice ? <Link href={`${M.invoiceBase}/${w.invoice.id}`} className="text-xs text-success hover:underline">Faturalandı{w.invoice.invoiceNo ? ` · ${w.invoice.invoiceNo}` : ""}</Link> : <span className="text-xs text-warning">Faturalanmadı</span>}</Td>
                   </tr>
@@ -353,7 +356,8 @@ export async function WaybillDetailPage({ params, direction }: { params: Promise
   const user = await requireUser(M.read);
   const w = await orNotFound(getWaybill(user, (await params).id));
   if (w.direction !== direction) notFound();
-  const canEdit = can(user.role, M.write) && can(user.role, "stock.write");
+  const locked = isLockedEDoc(w.eDocStatus);
+  const canEdit = can(user.role, M.write) && can(user.role, "stock.write") && !locked;
   const c = w.contact;
   return (
     <>
@@ -364,7 +368,7 @@ export async function WaybillDetailPage({ params, direction }: { params: Promise
             <h2 className="flex items-center gap-3 text-lg text-text"><Truck className="size-7 text-accent" /> {M.single}</h2>
             <div className="flex items-center gap-2">
               {canEdit && !w.invoiceId && <LinkButton href={`${M.base}/${w.id}/duzenle`} variant="secondary">Düzenle</LinkButton>}
-              {direction === "SALE" && <LinkButton href={`${M.base}/${w.id}/yazdir`} variant="secondary" target="_blank"><Printer className="size-3.5" /> Yazdır</LinkButton>}
+              {direction === "SALE" && !locked && <LinkButton href={`${M.base}/${w.id}/yazdir`} variant="secondary" target="_blank"><Printer className="size-3.5" /> Yazdır</LinkButton>}
             </div>
           </div>
           <div className="grid gap-3 border-b border-border px-4 py-4 sm:grid-cols-2">
@@ -379,6 +383,12 @@ export async function WaybillDetailPage({ params, direction }: { params: Promise
               <p className="text-xs">Depo: {w.warehouse.name}</p>
             </div>
           </div>
+          {direction === "SALE" && (w.driverName || w.vehiclePlate || w.carrierTitle) && (
+            <p className="border-b border-border px-4 py-2 text-xs text-text-2">
+              Taşıma: {[w.driverName && `Şoför ${w.driverName}`, w.vehiclePlate && `Plaka ${w.vehiclePlate}`, w.trailerPlate && `Dorse ${w.trailerPlate}`, w.carrierTitle && `Taşıyıcı ${w.carrierTitle}`].filter(Boolean).join(" · ")}
+              {w.dispatchTime && ` · Sevk saati ${w.dispatchTime}`}
+            </p>
+          )}
           <table className="w-full text-sm">
             <thead className="border-b border-border bg-card-muted"><tr><Th>Hizmet / ürün</Th><Th className="text-right">Miktar</Th></tr></thead>
             <tbody className="divide-y divide-border">
@@ -393,6 +403,16 @@ export async function WaybillDetailPage({ params, direction }: { params: Promise
           {w.notes && <p className="whitespace-pre-line border-t border-border px-4 py-3 text-sm text-text-2">{w.notes}</p>}
         </Card>
         <aside className="flex flex-col gap-3">
+          {direction === "SALE" && (
+            <Card className="flex flex-col gap-2 p-4 text-sm">
+              <p className="text-[11px] font-semibold uppercase text-text-2">e-İrsaliye</p>
+              <DocStatusBadge status={w.eDocStatus} profile="IRSALIYE" />
+              {w.eDocSentAt && <p className="text-xs text-text-3">Gönderim: {w.eDocSentAt.toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" })}</p>}
+              {w.eDocAnswer && w.eDocAnswer !== "None" && <p className="text-xs text-text-2">Alıcı yanıtı: {{ Waiting: "Bekleniyor", Answered: "Yanıtlandı" }[w.eDocAnswer] ?? w.eDocAnswer}</p>}
+              {w.eDocError && <p className="text-xs text-danger">{w.eDocError}</p>}
+              <DespatchPanel waybillId={w.id} status={w.eDocStatus} canSend={can(user.role, "einvoice.send")} hasError={w.eDocStatus === "FAILED"} />
+            </Card>
+          )}
           <Card className="p-4 text-sm">
             <p className="mb-2 text-[11px] font-semibold uppercase text-text-2">Fatura</p>
             {w.invoice ? (
@@ -404,7 +424,7 @@ export async function WaybillDetailPage({ params, direction }: { params: Promise
             )}
             <p className="mt-2 text-[11px] text-text-3">Stok irsaliye ile hareket etti; irsaliyeden oluşturulan faturada stok tekrar hareket etmez.</p>
           </Card>
-          {canEdit && !w.invoiceId && <ConfirmDelete action={deleteWaybillAction} id={w.id} label="İrsaliyeyi sil" confirmText="İrsaliye silinsin mi? Stok hareketi geri alınır." />}
+          {canEdit && !w.invoiceId && !locked && <ConfirmDelete action={deleteWaybillAction} id={w.id} label="İrsaliyeyi sil" confirmText="İrsaliye silinsin mi? Stok hareketi geri alınır." />}
         </aside>
       </div>
     </>
@@ -423,10 +443,14 @@ export async function WaybillFormPage({ params, searchParams, direction }: { par
   let values: WaybillFormValues;
   if (id) {
     const w = await orNotFound(getWaybill(user, id));
-    if (w.direction !== direction || w.invoiceId) notFound();
+    if (w.direction !== direction || w.invoiceId || isLockedEDoc(w.eDocStatus)) notFound();
     values = {
       id: w.id, direction, contactId: w.contactId, warehouseId: w.warehouseId, waybillNo: w.waybillNo, issueDate: w.issueDate.toISOString().slice(0, 10), dispatchDate: w.dispatchDate.toISOString().slice(0, 10),
       deliveryAddress: w.deliveryAddress, notes: w.notes, lines: w.lines.map((l) => ({ productId: l.productId ?? "", name: l.name, quantity: l.quantity.toString().replace(".", ","), unit: l.unit })),
+      transport: {
+        dispatchTime: w.dispatchTime, driverName: w.driverName, driverTckn: w.driverTckn, vehiclePlate: w.vehiclePlate, trailerPlate: w.trailerPlate,
+        carrierTaxNumber: w.carrierTaxNumber, carrierTitle: w.carrierTitle, carrierDistrict: w.carrierDistrict, carrierCity: w.carrierCity,
+      },
     };
   } else {
     const sp = searchParams ? await searchParams : {};

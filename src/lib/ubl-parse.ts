@@ -133,3 +133,45 @@ export function parseIncomingUbl(xml: string): ParsedUbl {
     warnings,
   };
 }
+
+// ── Gelen e-İrsaliye (DespatchAdvice) ──────────────────────
+
+const despatchParser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false, trimValues: true, isArray: (name) => ["DespatchLine", "Note", "PartyIdentification"].includes(name) });
+
+export interface ParsedDespatch {
+  uuid: string;
+  id: string;
+  issueDate: string;
+  despatchDate: string | null;
+  notes: string[];
+  supplier: ParsedParty;
+  lines: Array<{ name: string; code: string | null; quantity: string; unit: string }>;
+  warnings: string[];
+}
+
+/** Gelen e-İrsaliye XML'i → gelen irsaliye satırları (bilinmeyen birim "Adet" + uyarı) */
+export function parseDespatchUbl(xml: string): ParsedDespatch {
+  const doc = despatchParser.parse(xml) as Node;
+  const d = doc.DespatchAdvice as Node | undefined;
+  if (!d) throw new Error("UBL e-İrsaliyesi değil.");
+  const warnings: string[] = [];
+  const lines = arr(d.DespatchLine as Node[]).map((l) => {
+    const q = l.DeliveredQuantity as Node | string;
+    const unitRaw = typeof q === "object" ? String(q["@_unitCode"] ?? "C62") : "C62";
+    const item = (l.Item ?? {}) as Node;
+    const name = txt(item.Name) || "Kalem";
+    if (!isUnitCode(unitRaw)) warnings.push(`"${name}" satırındaki birim (${unitRaw}) tanımlı değil; Adet olarak alındı.`);
+    return { name, code: txt((item.SellersItemIdentification as Node | undefined)?.ID) || null, quantity: dec(q).toString(), unit: isUnitCode(unitRaw) ? unitRaw : "C62" };
+  });
+  const despatch = (((d.Shipment as Node | undefined)?.Delivery as Node | undefined)?.Despatch ?? {}) as Node;
+  return {
+    uuid: txt(d.UUID),
+    id: txt(d.ID),
+    issueDate: txt(d.IssueDate),
+    despatchDate: txt(despatch.ActualDespatchDate) || null,
+    notes: arr(d.Note as unknown[]).map(txt).filter(Boolean),
+    supplier: party(d.DespatchSupplierParty as Node | undefined),
+    lines,
+    warnings,
+  };
+}

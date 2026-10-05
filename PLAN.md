@@ -172,7 +172,7 @@ Account (kasa/banka) · Transaction (tahsilat/ödeme/transfer) · Cheque · Cate
 
 ## 5. Fazlar
 
-Durum: Faz 0–7 ✅ (5 Ekim 2026). Kalan: Coolify üzerinde ilk kurulum; e-İrsaliye ileri faz.
+Durum: Faz 0–7 ✅ + e-İrsaliye ✅ (5 Ekim 2026). Kalan: Coolify üzerinde ilk kurulum; e-İrsaliye alıcı yanıtı (ReceiptAdvice) gönderimi.
 
 
 | Faz | Kapsam | Bitti sayılır |

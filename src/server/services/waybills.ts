@@ -12,6 +12,7 @@ import { parseMoneyInput } from "@/lib/money";
 import { isUnitCode } from "@/lib/units";
 import { optText } from "@/lib/validation";
 import { applyMoves, resolveWarehouse, revertMoves } from "./stock";
+import { isLockedEDoc } from "@/lib/edoc-status";
 
 /** İrsaliye: giden (SALE, stok çıkışı) / gelen (PURCHASE, stok girişi). Faturalanan irsaliye değiştirilemez. */
 
@@ -29,6 +30,16 @@ export const waybillHeaderSchema = z.object({
   dispatchDate: date("Sevk tarihini girin."),
   deliveryAddress: optText(500),
   notes: optText(1000),
+  /** e-İrsaliye taşıma bilgileri */
+  dispatchTime: optText(8).refine((v) => v === null || /^\d{2}:\d{2}(:\d{2})?$/.test(v), "Saat ss:dd biçiminde olmalı."),
+  driverName: optText(100),
+  driverTckn: optText(11),
+  vehiclePlate: optText(15),
+  trailerPlate: optText(15),
+  carrierTaxNumber: optText(11),
+  carrierTitle: optText(200),
+  carrierDistrict: optText(100),
+  carrierCity: optText(100),
 });
 
 export interface WaybillLineInput { productId: string | null; name: string; quantity: string; unit: string }
@@ -74,16 +85,21 @@ export async function saveWaybill(user: CurrentUser, direction: InvoiceDirection
     const data = {
       direction, contactId: contact.id, warehouseId, waybillNo: header.waybillNo, issueDate: new Date(header.issueDate), dispatchDate: new Date(header.dispatchDate),
       deliveryAddress: header.deliveryAddress, notes: header.notes,
+      dispatchTime: header.dispatchTime, driverName: header.driverName, driverTckn: header.driverTckn, vehiclePlate: header.vehiclePlate, trailerPlate: header.trailerPlate,
+      carrierTaxNumber: header.carrierTaxNumber, carrierTitle: header.carrierTitle, carrierDistrict: header.carrierDistrict, carrierCity: header.carrierCity,
     };
     const lineData = lines.map((l, i) => ({ position: i + 1, productId: l.productId, name: l.name, quantity: l.quantity, unit: l.unit }));
     let wid = id;
     if (id) {
-      const existing = await tx.waybill.findUnique({ where: { id }, select: { direction: true, invoiceId: true } });
+      const existing = await tx.waybill.findUnique({ where: { id }, select: { direction: true, invoiceId: true, eDocStatus: true } });
       if (!existing || existing.direction !== direction) throw new AppError("NOT_FOUND", "İrsaliye bulunamadı.");
       if (existing.invoiceId) throw new AppError("CONFLICT", "Faturalanmış irsaliye değiştirilemez.");
+      if (isLockedEDoc(existing.eDocStatus)) throw new AppError("CONFLICT", "e-İrsaliye olarak gönderilmiş irsaliye değiştirilemez.");
       await revertMoves(tx, { waybillId: id });
       await tx.waybillLine.deleteMany({ where: { waybillId: id } });
-      await tx.waybill.update({ where: { id }, data: { ...data, lines: { create: lineData } } });
+      // Hatalı gönderilmiş irsaliye düzeltildi: bir sonraki gönderim yeni UUID ile
+      const eDocReset = existing.eDocStatus === "FAILED" ? { eDocStatus: "NONE" as const, eDocUuid: null, eDocError: null } : {};
+      await tx.waybill.update({ where: { id }, data: { ...data, ...eDocReset, lines: { create: lineData } } });
     } else {
       wid = (await tx.waybill.create({ data: { ...data, createdById: user.id, lines: { create: lineData } } })).id;
     }
@@ -100,13 +116,16 @@ export async function saveWaybill(user: CurrentUser, direction: InvoiceDirection
 }
 
 export async function deleteWaybill(user: CurrentUser, id: string) {
-  const w = await db.waybill.findUnique({ where: { id }, select: { direction: true, invoiceId: true } });
+  const w = await db.waybill.findUnique({ where: { id }, select: { direction: true, invoiceId: true, eDocStatus: true } });
   if (!w) throw new AppError("NOT_FOUND", "İrsaliye bulunamadı.");
+  if (isLockedEDoc(w.eDocStatus)) throw new AppError("CONFLICT", "e-İrsaliye olarak gönderilmiş irsaliye silinemez.");
   assertCan(user, perms(w.direction).write);
   assertCan(user, "stock.write");
   if (w.invoiceId) throw new AppError("CONFLICT", "Faturalanmış irsaliye silinemez. Önce faturayı silin.");
   await db.$transaction(async (tx) => {
     await revertMoves(tx, { waybillId: id });
+    // Gelen e-İrsaliyeden oluşturulduysa yeniden işlenebilir hale gelir
+    await tx.incomingDespatch.updateMany({ where: { waybillId: id }, data: { status: "NEW", waybillId: null } });
     await tx.waybill.delete({ where: { id } });
   });
   await audit({ userId: user.id, action: "waybill.deleted", entityType: "Waybill", entityId: id });

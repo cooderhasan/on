@@ -653,27 +653,47 @@ model StockTransferLine {
 // Stok irsaliye ile hareket eder; irsaliyeden oluşturulan fatura stoğa dokunmaz.
 
 model Waybill {
-  id              String           @id @default(cuid())
-  direction       InvoiceDirection
-  waybillNo       String?
-  contactId       String
-  warehouseId     String
-  issueDate       DateTime         @db.Date
+  id               String           @id @default(cuid())
+  direction        InvoiceDirection
+  waybillNo        String?
+  contactId        String
+  warehouseId      String
+  issueDate        DateTime         @db.Date
   /// Sevk / teslim tarihi
-  dispatchDate    DateTime         @db.Date
-  deliveryAddress String?
-  notes           String?
+  dispatchDate     DateTime         @db.Date
+  deliveryAddress  String?
+  notes            String?
+  /// Fiili sevk saati (HH:MM) — e-İrsaliye'de zorunlu
+  dispatchTime     String?
+  // Taşıma bilgileri (e-İrsaliye: şoför + plaka veya taşıyıcı firma)
+  driverName       String?
+  driverTckn       String?
+  vehiclePlate     String?
+  trailerPlate     String?
+  carrierTaxNumber String?
+  carrierTitle     String?
+  carrierDistrict  String?
+  carrierCity      String?
+  /// e-İrsaliye (NES edespatch) — durum değerleri faturayla aynı
+  eDocStatus       EDocStatus       @default(NONE)
+  eDocUuid         String?          @unique
+  eDocError        String?
+  eDocSentAt       DateTime?
+  eDocCheckedAt    DateTime?
+  /// Alıcının irsaliye yanıtı (ReceiptAdvice): None / Waiting / Answered
+  eDocAnswer       String?
   /// Faturalandıysa
-  invoiceId       String?
-  createdById     String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  invoiceId        String?
+  createdById      String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
-  contact    Contact         @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  warehouse  Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  invoice    Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  contact    Contact           @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  warehouse  Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  invoice    Invoice?          @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   lines      WaybillLine[]
   stockMoves StockMovement[]
+  incoming   IncomingDespatch?
 
   @@index([direction, issueDate])
   @@index([contactId])
@@ -784,20 +804,23 @@ model Cheque {
 // ── e-Fatura / e-Arşiv (NES) ayarları — tek satır ──────────
 
 model EInvoiceSettings {
-  id             String   @id @default("nes")
+  id                  String   @id @default("nes")
   /// https://apitest.nes.com.tr/ (test) veya https://api.nes.com.tr/ (canlı)
-  apiUrl         String   @default("https://apitest.nes.com.tr/")
+  apiUrl              String   @default("https://apitest.nes.com.tr/")
   /// AES-256-GCM ile şifreli API anahtarı (ENCRYPTION_KEY)
-  apiKeyEnc      String?
-  apiKeyLast4    String?
+  apiKeyEnc           String?
+  apiKeyLast4         String?
   /// Gönderici birim (GB) etiketi, ör. urn:mail:defaultgb@nes.com.tr
-  senderAlias    String?
+  senderAlias         String?
   /// Portalda tanımlı 3 harfli seriler (NES numarayı verir)
-  eInvoiceSeries String?
-  eArchiveSeries String?
+  eInvoiceSeries      String?
+  eArchiveSeries      String?
   /// e-Fatura mükellefine varsayılan senaryo
-  defaultProfile String   @default("TICARIFATURA")
-  updatedAt      DateTime @updatedAt
+  defaultProfile      String   @default("TICARIFATURA")
+  /// e-İrsaliye gönderici (GB) etiketi ve 3 harfli seri (e-Fatura'dan ayrı)
+  despatchSenderAlias String?
+  despatchSeries      String?
+  updatedAt           DateTime @updatedAt
 }
 
 // ── Giderler (fatura dışı) ─────────────────────────────────
@@ -968,4 +991,25 @@ model CompanyLogo {
   data      Bytes
   mime      String
   updatedAt DateTime @updatedAt
+}
+
+/// NES'ten alınan gelen e-İrsaliyeler (gelen irsaliyeye işlenir)
+model IncomingDespatch {
+  id              String         @id @default(cuid())
+  uuid            String         @unique
+  documentNumber  String?
+  issueDate       DateTime       @db.Date
+  senderTaxNumber String?
+  senderTitle     String
+  /// Alıcı yanıtı (NES): Waiting / AllAccepted / AllRejected / PartialAnswered
+  answer          String?
+  receivedAt      DateTime
+  status          IncomingStatus @default(NEW)
+  /// İşlendiği gelen irsaliye
+  waybillId       String?        @unique
+  syncedAt        DateTime       @default(now())
+
+  waybill Waybill? @relation(fields: [waybillId], references: [id], onDelete: SetNull)
+
+  @@index([status, receivedAt])
 }

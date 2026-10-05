@@ -68,6 +68,7 @@ export const NAV: NavGroup[] = [
       { href: "/depolar-arasi-transfer", label: "Depolar Arası Transfer", phase: 5, perm: "stock.read" },
       { href: "/giden-irsaliyeler", label: "Giden İrsaliyeler", phase: 5, perm: "sales.read" },
       { href: "/gelen-irsaliyeler", label: "Gelen İrsaliyeler", phase: 5, perm: "expenses.read" },
+      { href: "/gelen-e-irsaliyeler", label: "Gelen e-İrsaliyeler", phase: 8, perm: "expenses.read" },
       { href: "/fiyat-listeleri", label: "Fiyat Listeleri", phase: 5, perm: "stock.read" },
       { href: "/stok-hareketleri", label: "Stok Geçmişi", phase: 5, perm: "stock.read" },
       { href: "/raporlar/stoktaki-urunler", label: "Stoktaki Ürünler Raporu", phase: 6, perm: "reports.read" },

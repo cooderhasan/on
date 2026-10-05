@@ -43,7 +43,7 @@ export function DocStatusBadge({ status, profile }: { status: string; profile: s
   const s = EDOC_LABEL[status] ?? { label: status, tone: "bg-text-3" };
   return (
     <span className="flex items-center gap-1.5 text-[11px] text-text-3">
-      {profile === "EARSIVFATURA" ? "e-Arşiv" : "e-Fatura"}
+      {profile === "EARSIVFATURA" ? "e-Arşiv" : profile === "IRSALIYE" ? "e-İrsaliye" : "e-Fatura"}
       <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase text-white", s.tone)}>{s.label}</span>
     </span>
   );

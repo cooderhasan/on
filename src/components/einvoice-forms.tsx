@@ -10,7 +10,7 @@ import { ConfirmDelete } from "./money-forms";
 import { EINVOICE_PROFILES } from "@/lib/gib-codes";
 import { cn } from "@/lib/cn";
 
-export function EInvoiceSettingsForm({ s }: { s: { apiUrl: string; hasKey: boolean; apiKeyLast4: string | null; senderAlias: string | null; eInvoiceSeries: string | null; eArchiveSeries: string | null; defaultProfile: string } }) {
+export function EInvoiceSettingsForm({ s }: { s: { apiUrl: string; hasKey: boolean; apiKeyLast4: string | null; senderAlias: string | null; eInvoiceSeries: string | null; eArchiveSeries: string | null; defaultProfile: string; despatchSeries: string | null; despatchSenderAlias: string | null } }) {
   return (
     <>
       <ActionForm action={saveEInvoiceSettingsAction} className="gap-0">
@@ -47,6 +47,12 @@ export function EInvoiceSettingsForm({ s }: { s: { apiUrl: string; hasKey: boole
               </FormRow>
               <FormRow label="Gönderici etiketi (GB)" htmlFor="senderAlias" icon={<Link2 />} hint="Boşsa 'Bağlantıyı test et' NES'ten otomatik doldurur.">
                 <Input id="senderAlias" name="senderAlias" defaultValue={s.senderAlias ?? ""} placeholder="urn:mail:defaultgb@…" className="font-mono" />
+              </FormRow>
+              <FormRow label="e-İrsaliye serisi" htmlFor="despatchSeries" icon={<FileText />} error={st.fieldErrors?.despatchSeries} hint="NES portalında e-İrsaliye için tanımlı 3 karakterlik seri.">
+                <Input id="despatchSeries" name="despatchSeries" maxLength={3} defaultValue={s.despatchSeries ?? ""} className="w-28 font-mono uppercase" />
+              </FormRow>
+              <FormRow label="e-İrsaliye gönderici etiketi" htmlFor="despatchSenderAlias" icon={<Link2 />} hint="e-İrsaliye etiketi e-Fatura'dan farklıdır. Boşsa 'Bağlantıyı test et' doldurur.">
+                <Input id="despatchSenderAlias" name="despatchSenderAlias" defaultValue={s.despatchSenderAlias ?? ""} placeholder="urn:mail:irsaliyegb@…" className="font-mono" />
               </FormRow>
             </div>
           </>

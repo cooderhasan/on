@@ -88,8 +88,8 @@ const D = (v: Decimal.Value | null | undefined) => new Decimal(v ?? 0);
 /** Tutar: 2 hane */
 const amt = (v: Decimal.Value) => D(v).toFixed(2);
 /** Miktar / fiyat / oran: gereksiz sıfırlar atılır */
-const num = (v: Decimal.Value, dp = 8) => D(v).toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toString();
-const tag = (name: string, value: string | null | undefined, attrs = "") => (value === null || value === undefined || value === "" ? "" : `<${name}${attrs}>${xmlEscape(value)}</${name}>`);
+export const num = (v: Decimal.Value, dp = 8) => D(v).toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toString();
+export const tag = (name: string, value: string | null | undefined, attrs = "") => (value === null || value === undefined || value === "" ? "" : `<${name}${attrs}>${xmlEscape(value)}</${name}>`);
 const money = (name: string, v: Decimal.Value, cur: string) => `<${name} currencyID="${xmlEscape(cur)}">${amt(v)}</${name}>`;
 
 /** Fatura tipi: iade / tevkifat / istisna satırlara göre otomatik */
@@ -130,7 +130,7 @@ export function validateForUbl(inv: UblInvoice): string[] {
   return errs;
 }
 
-function partyXml(p: UblParty) {
+export function partyXml(p: UblParty) {
   const isPerson = p.taxNumber.length === 11;
   const words = p.title.trim().split(/\s+/);
   const family = isPerson ? words.length > 1 ? words.pop()! : "." : "";

@@ -26,6 +26,8 @@ export const settingsSchema = z.object({
   eInvoiceSeries: z.string().trim().toUpperCase().optional().transform((v) => v || null).refine((v) => v === null || /^[A-Z0-9]{3}$/.test(v), "Seri 3 karakter olmalı (ör. ABC)."),
   eArchiveSeries: z.string().trim().toUpperCase().optional().transform((v) => v || null).refine((v) => v === null || /^[A-Z0-9]{3}$/.test(v), "Seri 3 karakter olmalı (ör. ABC)."),
   defaultProfile: z.enum(["TICARIFATURA", "TEMELFATURA"]).default("TICARIFATURA"),
+  despatchSeries: z.string().trim().toUpperCase().optional().transform((v) => v || null).refine((v) => v === null || /^[A-Z0-9]{3}$/.test(v), "Seri 3 karakter olmalı (ör. IRS)."),
+  despatchSenderAlias: z.string().trim().max(200).optional().transform((v) => v || null),
 });
 
 /** API anahtarı asla geri gösterilmez: yalnızca son 4 karakteri */
@@ -40,13 +42,15 @@ export async function getEInvoiceSettings(user: CurrentUser) {
     eInvoiceSeries: s?.eInvoiceSeries ?? null,
     eArchiveSeries: s?.eArchiveSeries ?? null,
     defaultProfile: s?.defaultProfile ?? "TICARIFATURA",
+    despatchSeries: s?.despatchSeries ?? null,
+    despatchSenderAlias: s?.despatchSenderAlias ?? null,
   };
 }
 
 export async function saveEInvoiceSettings(user: CurrentUser, input: z.infer<typeof settingsSchema>) {
   assertCan(user, "settings.manage");
   const keyData = input.apiKey ? { apiKeyEnc: encryptSecret(input.apiKey), apiKeyLast4: input.apiKey.slice(-4) } : {};
-  const data = { apiUrl: input.apiUrl, senderAlias: input.senderAlias, eInvoiceSeries: input.eInvoiceSeries, eArchiveSeries: input.eArchiveSeries, defaultProfile: input.defaultProfile, ...keyData };
+  const data = { apiUrl: input.apiUrl, senderAlias: input.senderAlias, eInvoiceSeries: input.eInvoiceSeries, eArchiveSeries: input.eArchiveSeries, defaultProfile: input.defaultProfile, despatchSeries: input.despatchSeries, despatchSenderAlias: input.despatchSenderAlias, ...keyData };
   await db.eInvoiceSettings.upsert({ where: { id: "nes" }, create: { id: "nes", ...data }, update: data });
   await audit({ userId: user.id, action: "einvoice.settings_updated", metadata: { apiUrl: input.apiUrl, keyChanged: Boolean(input.apiKey) } });
 }
@@ -60,7 +64,16 @@ export async function testConnection(user: CurrentUser) {
   const me = await client.queryUser(company.taxNumber, "Gb");
   const gb = me?.aliases?.filter((a) => a.type === "Gb").map((a) => a.alias) ?? [];
   if (gb.length && !cfg.senderAlias) await db.eInvoiceSettings.update({ where: { id: "nes" }, data: { senderAlias: gb[0] } });
-  return { ok: true as const, isEInvoiceUser: Boolean(me), title: me?.title ?? null, senderAliases: gb, env: envLabel(cfg.apiUrl) };
+  // e-İrsaliye kullanıcısı mı (ayrı etiket); API anahtarının e-İrsaliye yetkisi yoksa e-Fatura testi yine geçerli
+  let despatchAliases: string[] = [];
+  try {
+    const d = await client.queryUser(company.taxNumber, "Gb", "edespatch");
+    despatchAliases = d?.aliases?.filter((a) => a.type === "Gb").map((a) => a.alias) ?? [];
+    if (despatchAliases.length && !cfg.despatchSenderAlias) await db.eInvoiceSettings.update({ where: { id: "nes" }, data: { despatchSenderAlias: despatchAliases[0] } });
+  } catch {
+    despatchAliases = [];
+  }
+  return { ok: true as const, isEInvoiceUser: Boolean(me), title: me?.title ?? null, senderAliases: gb, despatchAliases, env: envLabel(cfg.apiUrl) };
 }
 
 // ── Mükellef sorgusu ───────────────────────────────────────

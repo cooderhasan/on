@@ -175,6 +175,11 @@ export interface WaybillFormValues {
   deliveryAddress: string | null;
   notes: string | null;
   lines: Array<{ productId: string; name: string; quantity: string; unit: string }>;
+  /** e-İrsaliye taşıma bilgileri */
+  transport?: {
+    dispatchTime: string | null; driverName: string | null; driverTckn: string | null; vehiclePlate: string | null; trailerPlate: string | null;
+    carrierTaxNumber: string | null; carrierTitle: string | null; carrierDistrict: string | null; carrierCity: string | null;
+  };
 }
 
 export function WaybillForm({ values, contacts, products, warehouses, cancelHref }: {
@@ -232,9 +237,31 @@ export function WaybillForm({ values, contacts, products, warehouses, cancelHref
             <FormRow label="Düzenleme tarihi" htmlFor="issueDate" icon={<Calendar />} error={s.fieldErrors?.issueDate}>
               <Input id="issueDate" name="issueDate" type="date" defaultValue={values.issueDate} className="max-w-60" />
             </FormRow>
-            <FormRow label={sale ? "Sevk tarihi" : "Teslim alma tarihi"} htmlFor="dispatchDate" icon={<Truck />} error={s.fieldErrors?.dispatchDate}>
-              <Input id="dispatchDate" name="dispatchDate" type="date" defaultValue={values.dispatchDate} className="max-w-60" />
+            <FormRow label={sale ? "Sevk tarihi / saati" : "Teslim alma tarihi"} htmlFor="dispatchDate" icon={<Truck />} error={s.fieldErrors?.dispatchDate ?? s.fieldErrors?.dispatchTime}>
+              <div className="flex flex-wrap gap-2">
+                <Input id="dispatchDate" name="dispatchDate" type="date" defaultValue={values.dispatchDate} className="max-w-60" />
+                {sale && <Input name="dispatchTime" type="time" defaultValue={values.transport?.dispatchTime ?? ""} aria-label="Sevk saati" className="w-32" />}
+              </div>
             </FormRow>
+            {sale && (
+              <FormRow label="Taşıma" icon={<Truck />} hint="e-İrsaliye için: şoför + plaka veya taşıyıcı firma (kargo / nakliye). Kağıt irsaliyede isteğe bağlı.">
+                <details className="rounded-sm border border-[#d6d6d6] px-3 py-2 text-sm" open={Boolean(values.transport?.driverName || values.transport?.carrierTitle || values.transport?.vehiclePlate)}>
+                  <summary className="cursor-pointer text-text-2">Şoför, plaka, taşıyıcı firma</summary>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <Input name="driverName" maxLength={100} defaultValue={values.transport?.driverName ?? ""} placeholder="Şoför ad soyad" aria-label="Şoför ad soyad" />
+                    <Input name="driverTckn" inputMode="numeric" maxLength={11} defaultValue={values.transport?.driverTckn ?? ""} placeholder="Şoför TCKN" aria-label="Şoför TCKN" className="font-mono" />
+                    <Input name="vehiclePlate" maxLength={15} defaultValue={values.transport?.vehiclePlate ?? ""} placeholder="Araç plakası (42 ABC 123)" aria-label="Araç plakası" className="font-mono uppercase" />
+                    <Input name="trailerPlate" maxLength={15} defaultValue={values.transport?.trailerPlate ?? ""} placeholder="Dorse plakası (varsa)" aria-label="Dorse plakası" className="font-mono uppercase" />
+                    <Input name="carrierTitle" maxLength={200} defaultValue={values.transport?.carrierTitle ?? ""} placeholder="Taşıyıcı firma unvanı" aria-label="Taşıyıcı firma unvanı" className="sm:col-span-2" />
+                    <Input name="carrierTaxNumber" inputMode="numeric" maxLength={11} defaultValue={values.transport?.carrierTaxNumber ?? ""} placeholder="Taşıyıcı VKN / TCKN" aria-label="Taşıyıcı VKN" className="font-mono" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input name="carrierDistrict" maxLength={100} defaultValue={values.transport?.carrierDistrict ?? ""} placeholder="İlçe" aria-label="Taşıyıcı ilçe" />
+                      <Input name="carrierCity" maxLength={100} defaultValue={values.transport?.carrierCity ?? ""} placeholder="İl" aria-label="Taşıyıcı il" />
+                    </div>
+                  </div>
+                </details>
+              </FormRow>
+            )}
             {sale && (
               <FormRow label="Teslimat adresi" htmlFor="deliveryAddress" icon={<MapPin />}>
                 <Textarea id="deliveryAddress" name="deliveryAddress" rows={2} maxLength={500} value={address} onChange={(e) => setAddress(e.target.value)} />
