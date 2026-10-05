@@ -55,6 +55,8 @@ export function nesErrorMessage(status: number, body: string): string {
     msg = body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
   }
   if (status === 401) return "NES API anahtarı geçersiz veya süresi dolmuş.";
+  // Sık görülen GİB kural hatalarına yol gösterici not
+  if (/SERI TESPIT EDILDI|SERILERI BIRBIRINDEN FARKLI/i.test(msg)) msg += " → Bu seri GİB'de diğer belge türünde kullanılmış. NES portalında bu belge türü için tanımlı başka bir seri seçip Ayarlar › e-Fatura Ayarları'nda güncelleyin, sonra tekrar gönderin.";
   if (status === 403) return `NES: bu işlem için API anahtarının yetkisi yok${msg ? ` (${msg})` : ""}.`;
   return `NES hatası (${status})${msg ? `: ${msg}` : ""}`;
 }

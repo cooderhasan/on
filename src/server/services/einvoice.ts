@@ -28,6 +28,9 @@ export const settingsSchema = z.object({
   defaultProfile: z.enum(["TICARIFATURA", "TEMELFATURA"]).default("TICARIFATURA"),
   despatchSeries: z.string().trim().toUpperCase().optional().transform((v) => v || null).refine((v) => v === null || /^[A-Z0-9]{3}$/.test(v), "Seri 3 karakter olmalı (ör. IRS)."),
   despatchSenderAlias: z.string().trim().max(200).optional().transform((v) => v || null),
+}).superRefine((v, ctx) => {
+  // GİB: e-Fatura ve e-Arşiv aynı seriyle kesilemez
+  if (v.eInvoiceSeries && v.eInvoiceSeries === v.eArchiveSeries) ctx.addIssue({ code: "custom", path: ["eArchiveSeries"], message: "e-Arşiv serisi e-Fatura serisinden farklı olmalı." });
 });
 
 /** API anahtarı asla geri gösterilmez: yalnızca son 4 karakteri */

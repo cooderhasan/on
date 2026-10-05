@@ -85,3 +85,10 @@ describe("NES hata mesajı", () => {
     expect(nesErrorMessage(400, JSON.stringify({ message: "GECERSIZ ISTEK", invalidFields: [{ field: "SenderAlias", description: "Gönderici Etiketi boş geçilemez!", detail: "" }] }))).toBe("NES hatası (400): GECERSIZ ISTEK · SenderAlias: Gönderici Etiketi boş geçilemez!");
   });
 });
+
+describe("NES seri hatası", () => {
+  it("e-Fatura / e-Arşiv seri çakışmasında yol gösterilir", () => {
+    const m = nesErrorMessage(422, JSON.stringify({ message: "HATALI ISTEK", errors: [{ description: "SCHEMATRON_CHECK_RESULT_HAS_FAILED", detail: "E-FATURA'DA KULLANILAN SERI TESPIT EDILDI. E-FATURA/E-ARSIV SERILERI BIRBIRINDEN FARKLI OLMALIDIR : MFB" }] }));
+    expect(m).toMatch(/NES portalında bu belge türü için tanımlı başka bir seri/);
+  });
+});
