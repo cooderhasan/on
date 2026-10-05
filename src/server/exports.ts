@@ -1,5 +1,6 @@
 import "server-only";
 import type { CurrentUser } from "@/server/auth/session";
+import { audit } from "@/server/audit";
 import { assertCan } from "@/server/auth/permissions";
 import { db } from "@/server/db";
 import type { XlsxSheet } from "@/server/xlsx";
@@ -201,6 +202,45 @@ export const EXPORTS: Record<string, (user: CurrentUser, q: Params) => Promise<{
       }],
     };
   },
+};
+
+/** Tüm veriler (mali müşavir / arşiv): ana listeler + fatura satırları + kasa / banka hareketleri */
+EXPORTS["tum-veriler"] = async (user) => {
+  assertCan(user, "users.manage");
+  const none = new URLSearchParams();
+  const parts = await Promise.all([
+    EXPORTS.musteriler!(user, none), EXPORTS.tedarikciler!(user, none), EXPORTS.urunler!(user, none),
+    EXPORTS["satis-faturalari"]!(user, none), EXPORTS["gider-listesi"]!(user, none), EXPORTS.cekler!(user, none),
+  ]);
+  const [lines, txs] = await Promise.all([
+    db.documentLine.findMany({
+      where: { invoiceId: { not: null } },
+      orderBy: [{ invoice: { issueDate: "asc" } }, { position: "asc" }],
+      select: { name: true, quantity: true, unit: true, unitPrice: true, vatRate: true, netAmount: true, vatAmount: true, totalAmount: true, invoice: { select: { direction: true, kind: true, invoiceNo: true, issueDate: true, currency: true, contact: { select: { title: true } } } } },
+    }),
+    db.transaction.findMany({
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      select: { type: true, date: true, amount: true, appliedAmount: true, description: true, account: { select: { name: true, currency: true } }, targetAccount: { select: { name: true } }, contact: { select: { title: true } }, employee: { select: { name: true } }, invoice: { select: { invoiceNo: true } }, cheque: { select: { chequeNo: true } } },
+    }),
+  ]);
+  const TX: Record<string, string> = { COLLECTION: "Tahsilat", PAYMENT: "Ödeme", TRANSFER: "Virman", DEPOSIT: "Para girişi", WITHDRAWAL: "Para çıkışı" };
+  await audit({ userId: user.id, action: "backup.exported" });
+  return {
+    file: "tum-veriler",
+    sheets: [
+      ...parts.flatMap((p) => p.sheets),
+      {
+        name: "Fatura satırları",
+        columns: [{ header: "Tür", width: 14 }, { header: "Fatura no", width: 18 }, { header: "Tarih", type: "date" }, { header: "Cari", width: 30 }, { header: "Hizmet / ürün", width: 30 }, { header: "Miktar", type: "number" }, { header: "Birim", width: 8 }, { header: "Birim fiyat", type: "money" }, { header: "KDV %", type: "number", width: 7 }, { header: "KDV hariç", type: "money" }, { header: "KDV", type: "money" }, { header: "Toplam", type: "money" }, { header: "Döviz", width: 7 }],
+        rows: lines.map((l) => [l.invoice!.direction === "SALE" ? (l.invoice!.kind === "RETURN" ? "Satış iadesi" : "Satış") : l.invoice!.kind === "RETURN" ? "Alış iadesi" : "Alış", l.invoice!.invoiceNo, l.invoice!.issueDate, l.invoice!.contact.title, l.name, l.quantity, unitLabel(l.unit), l.unitPrice, l.vatRate, l.netAmount, l.vatAmount, l.totalAmount, l.invoice!.currency]),
+      },
+      {
+        name: "Kasa banka hareketleri",
+        columns: [{ header: "Tarih", type: "date" }, { header: "Tür", width: 12 }, { header: "Hesap", width: 22 }, { header: "Karşı hesap / cari", width: 30 }, { header: "Açıklama", width: 30 }, { header: "Döviz", width: 7 }, { header: "Tutar", type: "money" }],
+        rows: txs.map((t) => [t.date, TX[t.type], t.account?.name ?? (t.cheque ? `Çek ${t.cheque.chequeNo}` : ""), t.targetAccount?.name ?? t.contact?.title ?? t.employee?.name, [t.description, t.invoice?.invoiceNo].filter(Boolean).join(" · "), t.account?.currency ?? "", t.account ? t.amount : t.appliedAmount]),
+      },
+    ],
+  };
 };
 
 async function contactsExport(user: CurrentUser, kind: "CUSTOMER" | "SUPPLIER", q: Params) {

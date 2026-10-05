@@ -29,7 +29,7 @@ export function LoginForm() {
   );
 }
 
-export function SetupForm() {
+export function SetupForm({ tokenRequired }: { tokenRequired: boolean }) {
   return (
     <ActionForm action={setupAction}>
       {(s) => (
@@ -39,6 +39,7 @@ export function SetupForm() {
           <Field id="email" label="E-posta" type="email" autoComplete="username" required error={s.fieldErrors?.email} />
           <Field id="password" label="Şifre (en az 10 karakter)" type="password" autoComplete="new-password" required error={s.fieldErrors?.password} />
           <Field id="passwordConfirm" label="Şifre (tekrar)" type="password" autoComplete="new-password" required error={s.fieldErrors?.passwordConfirm} />
+          {tokenRequired && <Field id="setupToken" label="Kurulum anahtarı (sunucudaki SETUP_TOKEN)" type="password" autoComplete="off" required error={s.fieldErrors?.setupToken} />}
           <SubmitButton variant="accent" pendingText="Oluşturuluyor…" className="self-end">Yönetici hesabını oluştur</SubmitButton>
         </>
       )}

@@ -11,10 +11,13 @@ export interface AuditEntry {
   ip?: string | null;
 }
 
+/** Zamanlayıcının (otomatik işler) kullanıcı kimliği; işlem geçmişinde kullanıcısız görünür */
+export const SYSTEM_USER_ID = "sistem";
+
 /** Kritik işlemleri kaydeder. Audit yazılamazsa ana işlem durmaz, hata loglanır. */
 export async function audit(entry: AuditEntry): Promise<void> {
   try {
-    await db.auditLog.create({ data: { ...entry, userId: entry.userId ?? null, ip: entry.ip ?? null } });
+    await db.auditLog.create({ data: { ...entry, userId: entry.userId === SYSTEM_USER_ID ? null : (entry.userId ?? null), ip: entry.ip ?? null } });
   } catch (err) {
     console.error("[audit] yazılamadı", entry.action, err);
   }

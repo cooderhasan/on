@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
-import { needsSetup } from "@/server/auth/service";
+import { needsSetup, setupTokenRequired } from "@/server/auth/service";
 import { SetupForm } from "../auth-forms";
 
 export const metadata: Metadata = { title: "İlk kurulum" };
@@ -17,7 +17,7 @@ export default async function SetupPage() {
       <p className="mb-5 mt-1 text-sm text-text-2">
         Yönetici hesabını oluşturun. Diğer kullanıcıları sonra Ayarlar › Kullanıcılar&apos;dan ekleyebilirsiniz.
       </p>
-      <SetupForm />
+      <SetupForm tokenRequired={setupTokenRequired()} />
     </>
   );
 }

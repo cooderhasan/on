@@ -47,3 +47,6 @@ next-env.d.ts
 # Yerel gizli notlar (API anahtarı vb.) — asla commit edilmez
 nes api.txt
 *.secret.txt
+
+# Yerel veritabanı yedekleri
+yedekler/

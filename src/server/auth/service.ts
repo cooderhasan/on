@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/server/db";
 import { audit } from "@/server/audit";
 import { AppError } from "@/lib/errors";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { hashPassword, PASSWORD_MIN, verifyPassword } from "./password";
 
 export const loginSchema = z.object({
@@ -16,8 +17,25 @@ export const setupSchema = z
     email: z.string().trim().toLowerCase().email("Geçerli bir e-posta girin."),
     password: z.string().min(PASSWORD_MIN, `Şifre en az ${PASSWORD_MIN} karakter olmalı.`).max(200),
     passwordConfirm: z.string(),
+    setupToken: z.string().optional(),
   })
   .refine((v) => v.password === v.passwordConfirm, { message: "Şifreler aynı değil.", path: ["passwordConfirm"] });
+
+/**
+ * Canlıda ilk kurulum SETUP_TOKEN ile korunur: sunucu yeni açıldığında /kurulum'a ilk ulaşan kişi yönetici olamasın.
+ * Geliştirmede anahtar istenmez. Production'da anahtar tanımlı değilse kurulum kapalıdır.
+ */
+export function setupTokenRequired(): boolean {
+  return process.env.NODE_ENV === "production" || Boolean(process.env.SETUP_TOKEN);
+}
+
+function checkSetupToken(given: string | undefined) {
+  if (!setupTokenRequired()) return;
+  const expected = process.env.SETUP_TOKEN;
+  if (!expected || expected.length < 12) throw new AppError("FORBIDDEN", "Kurulum kapalı: sunucuda SETUP_TOKEN (en az 12 karakter) tanımlayın.");
+  const d = (s: string) => createHash("sha256").update(s).digest();
+  if (!timingSafeEqual(d(given ?? ""), d(expected))) throw new AppError("VALIDATION", "Kurulum anahtarı hatalı.", { setupToken: "Hatalı" });
+}
 
 /** Hiç kullanıcı yoksa ilk kurulum gerekir (ilk kullanıcı yönetici olur). */
 export async function needsSetup(): Promise<boolean> {
@@ -28,6 +46,7 @@ export async function needsSetup(): Promise<boolean> {
  * İlk yöneticiyi oluşturur. Yarış durumuna karşı: kayıt işlem içinde, kullanıcı sayısı tekrar kontrol edilerek yapılır.
  */
 export async function createFirstAdmin(input: z.infer<typeof setupSchema>) {
+  checkSetupToken(input.setupToken);
   const passwordHash = await hashPassword(input.password);
   const user = await db.$transaction(async (tx) => {
     if ((await tx.user.count()) > 0) throw new AppError("CONFLICT", "Kurulum zaten yapılmış. Giriş yapın.");

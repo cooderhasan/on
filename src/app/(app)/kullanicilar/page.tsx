@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { requireUser } from "@/server/auth/session";
-import { ComingSoon } from "@/components/coming-soon";
+import { UserListPage } from "@/components/user-views";
 
 export const metadata: Metadata = { title: "Kullanıcılar" };
 
-export default async function Page() {
-  await requireUser();
-  return <ComingSoon title="Kullanıcılar" phase={7} />;
+export default function Page() {
+  return <UserListPage />;
 }

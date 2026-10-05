@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+tests
+yedekler
+coverage
+*.log
+*.tmp.ts
+baslat.bat
+yedek-al.bat

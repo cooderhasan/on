@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { db } from "@/server/db";
-import { assertCan, type Permission } from "./permissions";
+import { can, type Permission } from "./permissions";
 
 export const SESSION_COOKIE = "oturum";
 const SESSION_DAYS = 14;
@@ -55,10 +55,10 @@ export const getCurrentUser = cache(async () => {
 
 export type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
 
-/** Sayfalar için: oturum yoksa girişe yönlendirir, yetki yoksa hata verir. */
+/** Sayfalar için: oturum yoksa girişe, yetki yoksa "yetkiniz yok" sayfasına yönlendirir (menü yerinde kalır). */
 export async function requireUser(permission?: Permission): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/giris");
-  if (permission) assertCan(user, permission);
+  if (permission && !can(user.role, permission)) redirect("/yetki-yok");
   return user;
 }
