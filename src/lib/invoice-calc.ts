@@ -133,3 +133,40 @@ export function calculateDocument(lines: LineInput[], doc: { discountType?: Disc
     },
   };
 }
+
+/**
+ * Toplamdan birim fiyat (satırda "Toplam (KDV dahil)" yazılınca):
+ *  matrah = toplam / ((1 + ÖTV%) × (1 + KDV%)), satır indirimi ve yüzde genel indirim geri eklenir, birim fiyat = brüt / miktar.
+ *  6 hane tutulur; hesap motoru yuvarlamasıyla toplam, yazılan tutara (kuruşu kuruşuna) döner.
+ *  Tutar türündeki genel indirim satırlara oranla dağıldığı için hesaba katılmaz.
+ */
+export function unitPriceFromTotal(
+  total: Decimal.Value,
+  line: { quantity: Decimal.Value; vatRate: number; otvRate?: Decimal.Value | null; discountType?: DiscountKind | null; discountValue?: Decimal.Value | null },
+  docPercent?: Decimal.Value | null,
+): Decimal | null {
+  const t = new Decimal(total);
+  const qty = new Decimal(line.quantity);
+  if (t.isNegative() || qty.lessThanOrEqualTo(0)) return null;
+  let net = t.dividedBy(new Decimal(1).plus(new Decimal(line.otvRate ?? 0).dividedBy(100))).dividedBy(new Decimal(1).plus(new Decimal(line.vatRate).dividedBy(100)));
+  if (docPercent && new Decimal(docPercent).lessThan(100)) net = net.dividedBy(new Decimal(1).minus(new Decimal(docPercent).dividedBy(100)));
+  if (line.discountValue) {
+    const d = new Decimal(line.discountValue);
+    if ((line.discountType ?? "PERCENT") === "PERCENT") { if (d.lessThan(100)) net = net.dividedBy(new Decimal(1).minus(d.dividedBy(100))); }
+    else net = net.plus(d);
+  }
+  // Başlangıç tahmini; yuvarlama yüzünden tutmuyorsa komşu kuruşlar denenir (tam eşleşme yoksa en yakını)
+  const base = net.dividedBy(qty);
+  const step = new Decimal("0.01").dividedBy(qty);
+  const doc = docPercent ? { discountType: "PERCENT" as const, discountValue: docPercent } : {};
+  let best: { price: Decimal; diff: Decimal } | null = null;
+  for (const k of [0, -1, 1, -2, 2, -3, 3]) {
+    const price = base.plus(step.times(k)).toDecimalPlaces(6, Decimal.ROUND_HALF_UP);
+    if (price.isNegative()) continue;
+    const got = calculateDocument([{ ...line, unitPrice: price }], doc).lines[0]!.totalAmount;
+    const diff = got.minus(t).abs();
+    if (diff.isZero()) return price;
+    if (!best || diff.lessThan(best.diff)) best = { price, diff };
+  }
+  return best?.price ?? null;
+}

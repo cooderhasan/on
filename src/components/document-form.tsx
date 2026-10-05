@@ -10,7 +10,7 @@ import { ActionForm, FormMessage } from "./forms";
 import { FormHeader } from "./record-forms";
 import { Button, FormRow, Input, Select, Textarea } from "./ui";
 import { Money } from "./money";
-import { calculateDocument } from "@/lib/invoice-calc";
+import { calculateDocument, unitPriceFromTotal } from "@/lib/invoice-calc";
 import { OTV_CODES, VAT_EXEMPTION_CODES, WITHHOLDING_CODES, withholdingByCode } from "@/lib/gib-codes";
 import { parseMoneyInput } from "@/lib/money";
 import { CURRENCIES, UNITS, VAT_RATES } from "@/lib/units";
@@ -34,6 +34,8 @@ export interface LineValue {
   withholdingCode: string;
   /** Hangi ek alanlar açık */
   show: { desc?: boolean; disc?: boolean; otv?: boolean; wh?: boolean };
+  /** Toplam alanına elle yazılan KDV dahil tutar (yazarken); boşsa hesaplanan toplam gösterilir */
+  totalDraft?: string | null;
 }
 
 export interface DocumentFormValues {
@@ -131,6 +133,29 @@ export function DocumentForm({
   const [nextKey, setNextKey] = useState(lines.length);
 
   const update = (key: number, patch: Partial<LineValue>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+
+  /**
+   * Toplamdan birim fiyat: KDV (ve varsa ÖTV, satır indirimi) dahil tutar yazılınca
+   * birim fiyat = matrah / miktar. Matrah = toplam / ((1 + ÖTV) × (1 + KDV)); satır indirimi geri eklenir.
+   * Birim fiyat 6 haneye kadar tutulur ki yuvarlama sonrası toplam yazılan tutara eşit çıksın.
+   */
+  const onTotal = (l: LineValue, raw: string) => {
+    const total = parseMoneyInput(raw);
+    const price = total
+      ? unitPriceFromTotal(
+          total,
+          {
+            quantity: dec(l.quantity || "0"),
+            vatRate: l.vatRate,
+            otvRate: l.show.otv && l.otvRate ? dec(l.otvRate) : null,
+            discountType: l.show.disc && l.discountValue ? l.discountType || "PERCENT" : null,
+            discountValue: l.show.disc && l.discountValue ? dec(l.discountValue) : null,
+          },
+          showDocDisc && discValue && (discType || "PERCENT") === "PERCENT" ? dec(discValue) : null,
+        )
+      : null;
+    update(l.key, price ? { totalDraft: raw, unitPrice: tr(price.toString()) } : { totalDraft: raw });
+  };
   const addLine = () => {
     setLines((ls) => [...ls, { key: nextKey, productId: "", name: "", description: null, quantity: "1", unit: "C62", unitPrice: "", discountType: "", discountValue: "", vatRate: 20, vatExemptionCode: "", otvRate: "", otvCode: "0074", withholdingRate: "", withholdingCode: "", show: {} }]);
     setNextKey((k) => k + 1);
@@ -372,7 +397,7 @@ export function DocumentForm({
           {/* Satırlar */}
           <div className="border-t border-border">
             <div className="hidden grid-cols-[minmax(0,3fr)_90px_100px_130px_110px_130px_64px] gap-2 bg-card-muted px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-text-3 lg:grid">
-              <span>Hizmet / ürün</span><span>Miktar</span><span>Birim</span><span>Br. fiyat</span><span>Vergi</span><span className="text-right">Toplam</span><span />
+              <span>Hizmet / ürün</span><span>Miktar</span><span>Birim</span><span>Br. fiyat</span><span>Vergi</span><span className="text-right" title="KDV dahil toplamı yazarsanız birim fiyat hesaplanır">Toplam (KDV dahil)</span><span />
             </div>
             <datalist id="urunler">
               {products.map((p) => <option key={p.id} value={p.name}>{p.code ?? ""}</option>)}
@@ -400,7 +425,16 @@ export function DocumentForm({
                     <Select name="line_vat" value={l.vatRate} onChange={(e) => update(l.key, { vatRate: Number(e.target.value) })} aria-label="KDV">
                       {VAT_RATES.map((r) => <option key={r} value={r}>KDV %{r}</option>)}
                     </Select>
-                    <div className="flex items-center justify-end text-right text-sm"><Money value={calc.lines[idx]?.totalAmount ?? 0} currency={currency} /></div>
+                    <Input
+                      inputMode="decimal"
+                      value={l.totalDraft ?? (calc.lines[idx] && !calc.lines[idx]!.totalAmount.isZero() ? tr(calc.lines[idx]!.totalAmount.toFixed(2)) : "")}
+                      onChange={(e) => onTotal(l, e.target.value)}
+                      onBlur={() => update(l.key, { totalDraft: null })}
+                      placeholder="0,00"
+                      aria-label="Toplam (KDV dahil) — yazılırsa birim fiyat hesaplanır"
+                      title="KDV dahil toplamı yazın; birim fiyat miktara göre hesaplanır"
+                      className="text-right font-mono"
+                    />
                     <div className="relative flex justify-end gap-1">
                       <button type="button" onClick={() => setMenuFor(menuFor === l.key ? null : l.key)} className="grid size-8 place-items-center rounded-sm border border-border text-text-2 hover:bg-card-muted" aria-label="Satıra ek alan ekle" aria-expanded={menuFor === l.key}>
                         <Plus className="size-4" />

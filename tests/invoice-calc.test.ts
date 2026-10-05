@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import Decimal from "decimal.js";
-import { allocate, calculateDocument } from "@/lib/invoice-calc";
+import { allocate, calculateDocument, unitPriceFromTotal } from "@/lib/invoice-calc";
 
 const s = (d: Decimal) => d.toFixed(2);
 
@@ -74,5 +74,44 @@ describe("fatura hesap motoru", () => {
     const { totals } = calculateDocument([]);
     expect(s(totals.grandTotal)).toBe("0.00");
     expect(totals.vatBreakdown).toEqual([]);
+  });
+});
+
+describe("toplamdan birim fiyat", () => {
+  it("yazılan KDV dahil toplam, hesap motorundan kuruşu kuruşuna aynı döner", () => {
+    const totals = ["1000", "1199.99", "0.01", "37.5", "123456.78", "999999.99", "250", "17.17"];
+    let exact = 0;
+    let reachable = 0;
+    for (const total of totals) {
+      for (const quantity of ["1", "3", "7", "12.5", "0.333"]) {
+        for (const vatRate of [0, 1, 10, 20]) {
+          const price = unitPriceFromTotal(total, { quantity, vatRate })!;
+          const r = calculateDocument([{ quantity, unitPrice: price, vatRate }]);
+          // Yuvarlama yüzünden ulaşılamayan tutarlarda (ör. %20 ile 999.999,99) en yakın kuruş
+          expect(r.lines[0]!.totalAmount.minus(total).abs().lessThanOrEqualTo("0.01"), `${total} / ${quantity} / %${vatRate}`).toBe(true);
+          if (vatRate === 0 || quantity === "1") reachable++;
+          if (r.lines[0]!.totalAmount.equals(total)) exact++;
+        }
+      }
+    }
+    // Büyük çoğunluk birebir; %20 / 999.999,99 gibi birkaç tutar yuvarlama nedeniyle 1 kuruş sapar
+    expect(exact).toBeGreaterThan(150);
+    expect(reachable).toBeGreaterThan(0);
+    expect(calculateDocument([{ quantity: 1, unitPrice: unitPriceFromTotal("1000", { quantity: 1, vatRate: 20 })!, vatRate: 20 }]).lines[0]!.totalAmount.toString()).toBe("1000");
+  });
+
+  it("satır indirimi, ÖTV ve yüzde genel indirim hesaba katılır", () => {
+    const cases: Array<[Parameters<typeof unitPriceFromTotal>[1], string | null]> = [
+      [{ quantity: "2", vatRate: 20, discountType: "PERCENT", discountValue: "10" }, null],
+      [{ quantity: "4", vatRate: 20, discountType: "AMOUNT", discountValue: "50" }, null],
+      [{ quantity: "1", vatRate: 20, otvRate: "25" }, null],
+      [{ quantity: "3", vatRate: 10 }, "15"],
+    ];
+    for (const [line, docPercent] of cases) {
+      const price = unitPriceFromTotal("2400", line, docPercent)!;
+      const r = calculateDocument([{ ...line, unitPrice: price }], docPercent ? { discountType: "PERCENT", discountValue: docPercent } : {});
+      expect(r.lines[0]!.totalAmount.minus(2400).abs().lessThanOrEqualTo("0.01"), JSON.stringify(line)).toBe(true);
+    }
+    expect(unitPriceFromTotal("100", { quantity: "0", vatRate: 20 })).toBeNull();
   });
 });
