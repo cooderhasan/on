@@ -22,6 +22,8 @@ export default async function Page(props: PageProps<"/satislar/[id]/yazdir">) {
         currency: inv.currency,
         notes: inv.notes,
         contact: inv.contact,
+        contactId: inv.contactId,
+        amountForWords: inv.payableTotal,
         lines: inv.lines,
         totals: [
           ["Ara toplam", inv.grossTotal],

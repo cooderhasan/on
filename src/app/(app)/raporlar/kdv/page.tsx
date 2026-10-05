@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { requireUser } from "@/server/auth/session";
-import { ComingSoon } from "@/components/coming-soon";
+import { VatReportPage } from "@/components/report-views";
 
 export const metadata: Metadata = { title: "KDV Raporu" };
 
-export default async function Page() {
-  await requireUser();
-  return <ComingSoon title="KDV Raporu" phase={6} />;
+export default function Page(props: PageProps<"/raporlar/kdv">) {
+  return <VatReportPage searchParams={props.searchParams} />;
 }

@@ -137,6 +137,7 @@ export async function InvoiceListPage({ searchParams }: { searchParams: Promise<
           page={page}
           pages={pages}
           href={href}
+          exportHref={buildHref("/api/disa-aktar/satis-faturalari", { q, durum: payment, baslangic: from, bitis: to })}
           summary={<>{totals.payable.map((t) => <span key={t.currency}>Toplam <Money value={t.total} currency={t.currency} /></span>)}{totals.remaining.map((t) => <span key={t.currency}>Tahsil edilecek <Money value={t.total} currency={t.currency} /></span>)}</>}
         />
       </Card>

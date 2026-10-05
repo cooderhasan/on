@@ -28,6 +28,8 @@ export interface ContactFilter {
   categoryId?: string;
   sort?: "title" | "new";
   page?: number;
+  /** Dışa aktarma: sayfalama yok */
+  all?: boolean;
 }
 
 export async function listContacts(user: CurrentUser, kind: ContactKind, f: ContactFilter = {}) {
@@ -49,8 +51,8 @@ export async function listContacts(user: CurrentUser, kind: ContactKind, f: Cont
     db.contact.findMany({
       where,
       orderBy: f.sort === "new" ? { createdAt: "desc" } : { title: "asc" },
-      take: PAGE_SIZE,
-      skip: (page - 1) * PAGE_SIZE,
+      take: f.all ? undefined : PAGE_SIZE,
+      skip: f.all ? undefined : (page - 1) * PAGE_SIZE,
       include: { category: { select: { name: true, color: true } } },
     }),
     db.contact.count({ where }),

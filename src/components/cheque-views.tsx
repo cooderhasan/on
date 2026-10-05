@@ -126,6 +126,7 @@ export async function ChequeListPage({ searchParams }: { searchParams: Promise<S
           page={page}
           pages={pages}
           href={href}
+          exportHref="/api/disa-aktar/cekler"
           summary={openTotals.map((t) => (
             <span key={`${t.direction}${t.currency}`}>{t.direction === "RECEIVED" ? "Portföyde" : "Ödenecek"} <Money value={t.total} currency={t.currency} /></span>
           ))}

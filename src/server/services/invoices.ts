@@ -35,6 +35,8 @@ export interface InvoiceFilter {
   to?: string;
   contactId?: string;
   page?: number;
+  /** Dışa aktarma: sayfalama yok */
+  all?: boolean;
 }
 
 export async function listInvoices(user: CurrentUser, direction: InvoiceDirection, f: InvoiceFilter = {}) {
@@ -77,7 +79,7 @@ export async function listInvoices(user: CurrentUser, direction: InvoiceDirectio
     return [...m].map(([currency, total]) => ({ currency, total }));
   };
   return {
-    rows: rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    rows: f.all ? rows : rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
     total: rows.length,
     page,
     pages: Math.max(1, Math.ceil(rows.length / PAGE_SIZE)),

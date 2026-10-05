@@ -9,6 +9,7 @@ import { createContact, KIND_LABELS, setContactArchived, updateContact } from "@
 import { createProduct, setProductArchived, updateProduct } from "@/server/services/products";
 import { createAccount, setAccountArchived, updateAccount } from "@/server/services/accounts";
 import { createCategory, createTag, deleteCategory, deleteTag } from "@/server/services/categories";
+import { printSettingsSchema, savePrintSettings } from "@/server/services/print-settings";
 import { accountSchema, categorySchema, companySchema, contactSchema, parseRepeated, productSchema, tagSchema } from "@/lib/validation";
 import { AppError } from "@/lib/errors";
 import type { ActionState } from "@/lib/action-state";
@@ -133,4 +134,14 @@ export async function deleteTagAction(fd: FormData) {
   const user = await requireUser();
   await deleteTag(user, String(fd.get("id")));
   revalidatePath("/kategori-ve-etiketler");
+}
+
+// ── Yazdırma şablonu ───────────────────────────────────────
+export async function savePrintSettingsAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return safeAction(async () => {
+    const user = await requireUser();
+    await savePrintSettings(user, parseForm(printSettingsSchema, fd), fd.getAll("bankAccountId").map(String));
+    revalidatePath("/yazdirma-sablonlari");
+    return { ok: true, message: "Yazdırma ayarları kaydedildi." };
+  });
 }

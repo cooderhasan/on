@@ -3,6 +3,11 @@ import { getCompany } from "@/server/company";
 import { Money } from "./money";
 import { unitLabel } from "@/lib/units";
 import { PrintButton } from "./print-button";
+import Decimal from "decimal.js";
+import { getPrintSettings, printBankAccounts } from "@/server/services/print-settings";
+import { contactBalance } from "@/server/services/ledger";
+import { amountInWords } from "@/lib/ubl";
+import { formatIban } from "@/lib/iban";
 
 const fmt = (d: Date) => d.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 
@@ -16,12 +21,20 @@ interface PrintDoc {
   contact: { title: string; address: string | null; district: string | null; city: string | null; taxOffice: string | null; taxNumber: string | null; email: string | null; phone: string | null };
   lines: Array<{ id: string; name: string; description: string | null; quantity: { toString(): string }; unit: string; unitPrice: { toString(): string }; vatRate: number; discountAmount: { toString(): string; greaterThan(n: number): boolean }; totalAmount: { toString(): string } }>;
   totals: Array<[string, { toString(): string }, boolean?]>;
+  /** "YALNIZ …" satırı için (ödenecek tutar) */
+  amountForWords?: { toString(): string };
+  /** Faturada müşteri bakiyesi gösterilecekse */
+  contactId?: string;
   footer?: ReactNode;
 }
 
 /** A4 yazdırma görünümü (kağıt fatura, proforma, teklif). e-Belgeler NES'in resmi görüntüsüyle yazdırılır (Faz 3). */
 export async function DocumentPrint({ doc }: { doc: PrintDoc }) {
-  const company = await getCompany();
+  const [company, settings] = await Promise.all([getCompany(), getPrintSettings()]);
+  const [banks, balance] = await Promise.all([
+    printBankAccounts(settings.bankAccountIds),
+    settings.showContactBalance && doc.contactId ? contactBalance(doc.contactId) : Promise.resolve(null),
+  ]);
   const c = doc.contact;
   return (
     <div className="min-h-dvh bg-[#e4e4e4] py-6 print:bg-white print:py-0">
@@ -77,7 +90,24 @@ export async function DocumentPrint({ doc }: { doc: PrintDoc }) {
             ))}
           </dl>
         </div>
+        {settings.showAmountInWords && doc.amountForWords && (
+          <p className="mt-3 text-right text-[11px] font-semibold">YALNIZ: {amountInWords(new Decimal(doc.amountForWords.toString()), doc.currency)}</p>
+        )}
+        {balance && <p className="mt-2 text-right text-[11px]">Güncel bakiyeniz: <Money value={balance} currency={doc.currency} /> {balance.isNegative() ? "(alacaklısınız)" : "(borçlusunuz)"}</p>}
         {doc.notes && <p className="mt-6 whitespace-pre-line border-t border-gray-300 pt-2">{doc.notes}</p>}
+        {banks.length > 0 && (
+          <section className="mt-6 border-t border-gray-300 pt-2 text-[11px]">
+            <p className="text-[10px] font-bold uppercase text-gray-500">Banka bilgileri</p>
+            {banks.map((b) => <p key={b.id}>{[b.bankName ?? b.name, b.branch].filter(Boolean).join(" / ")} · {b.currency} · <span className="font-mono">{formatIban(b.iban!)}</span></p>)}
+          </section>
+        )}
+        {settings.footerNote && <p className="mt-4 whitespace-pre-line text-[11px] text-gray-700">{settings.footerNote}</p>}
+        {settings.showSignature && (
+          <div className="mt-16 grid grid-cols-2 gap-12 text-center text-[11px]">
+            <div className="border-t border-black pt-1">Teslim eden</div>
+            <div className="border-t border-black pt-1">Teslim alan</div>
+          </div>
+        )}
         {doc.footer}
       </article>
     </div>

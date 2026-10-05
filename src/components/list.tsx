@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Search } from "lucide-react";
+import { Download, Search } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 /** Paraşüt liste üstü: gri çubukta arama (+ isteğe bağlı filtreler) — GET formu, sonuç URL'de */
@@ -23,7 +23,8 @@ export function ListToolbar({ action, q, placeholder = "Ara…", hidden, filters
 }
 
 /** Liste altı: kayıt sayısı + sayfalama + (isteğe bağlı) toplamlar */
-export function ListFooter({ total, page, pages, href, summary }: { total: number; page: number; pages: number; href: (p: number) => string; summary?: ReactNode }) {
+/** `exportHref`: aynı filtrelerle Excel çıktısı (/api/disa-aktar/…) */
+export function ListFooter({ total, page, pages, href, summary, exportHref }: { total: number; page: number; pages: number; href: (p: number) => string; summary?: ReactNode; exportHref?: string }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-xs text-text-2">
       <div className="flex items-center gap-1">
@@ -42,6 +43,7 @@ export function ListFooter({ total, page, pages, href, summary }: { total: numbe
       <div className="flex flex-wrap items-center gap-4">
         <span>{total} kayıt</span>
         {summary}
+        {exportHref && total > 0 && <a href={exportHref} className="flex items-center gap-1 text-accent hover:underline"><Download className="size-3.5" /> Excel&apos;e aktar</a>}
       </div>
     </div>
   );

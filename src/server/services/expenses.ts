@@ -144,7 +144,7 @@ export interface ExpenseRow {
 
 export const PAGE_SIZE = 25;
 
-export async function listExpenseRows(user: CurrentUser, f: { q?: string; payment?: "open" | "overdue" | "paid"; kind?: "INVOICE" | ExpenseKind; from?: string; to?: string; page?: number } = {}) {
+export async function listExpenseRows(user: CurrentUser, f: { q?: string; payment?: "open" | "overdue" | "paid"; kind?: "INVOICE" | ExpenseKind; from?: string; to?: string; page?: number; all?: boolean } = {}) {
   assertCan(user, "expenses.read");
   const dateWhere = f.from || f.to ? { ...(f.from ? { gte: new Date(f.from) } : {}), ...(f.to ? { lte: new Date(f.to) } : {}) } : undefined;
   const q = f.q?.trim();
@@ -176,5 +176,5 @@ export async function listExpenseRows(user: CurrentUser, f: { q?: string; paymen
   rows.sort((a, b) => b.date.getTime() - a.date.getTime());
   const page = Math.max(1, f.page ?? 1);
   const sum = (pick: (r: ExpenseRow) => Decimal) => rows.reduce((a, r) => a.plus(pick(r).times(r.isReturn ? -1 : 1)), new Decimal(0));
-  return { rows: rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), total: rows.length, page, pages: Math.max(1, Math.ceil(rows.length / PAGE_SIZE)), totals: { total: sum((r) => r.total), remaining: sum((r) => r.remaining) } };
+  return { rows: f.all ? rows : rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), total: rows.length, page, pages: Math.max(1, Math.ceil(rows.length / PAGE_SIZE)), totals: { total: sum((r) => r.total), remaining: sum((r) => r.remaining) } };
 }

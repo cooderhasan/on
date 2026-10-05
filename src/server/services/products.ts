@@ -13,7 +13,7 @@ import { syncOpeningMove } from "./stock";
 
 export const PAGE_SIZE = 25;
 
-export async function listProducts(user: CurrentUser, f: { q?: string; archived?: boolean; categoryId?: string; critical?: boolean; page?: number } = {}) {
+export async function listProducts(user: CurrentUser, f: { q?: string; archived?: boolean; categoryId?: string; critical?: boolean; page?: number; all?: boolean } = {}) {
   assertCan(user, "stock.read");
   const where: Prisma.ProductWhereInput = { isArchived: Boolean(f.archived) };
   if (f.categoryId) where.categoryId = f.categoryId;
@@ -30,7 +30,7 @@ export async function listProducts(user: CurrentUser, f: { q?: string; archived?
   // Kritik stok filtresi iki sütunu karşılaştırır (Prisma'da sütun-sütun koşulu yok) → bellekte
   const filtered = f.critical ? all.filter((p) => p.trackStock && p.criticalStock !== null && p.stockQuantity.lessThanOrEqualTo(p.criticalStock)) : all;
   const total = filtered.length;
-  return { rows: filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), total, page, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
+  return { rows: f.all ? filtered : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), total, page, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
 }
 
 export async function getProduct(user: CurrentUser, id: string) {

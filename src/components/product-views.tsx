@@ -127,6 +127,7 @@ export async function ProductListPage({ searchParams }: { searchParams: Promise<
           page={page}
           pages={pages}
           href={href}
+          exportHref={archived ? undefined : buildHref("/api/disa-aktar/urunler", { q })}
           summary={<Link href={buildHref(BASE, { arsiv: archived ? undefined : "1" })} className="text-accent hover:underline">{archived ? "Aktif kayıtlar" : "Arşiv"}</Link>}
         />
       </Card>

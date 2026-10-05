@@ -109,7 +109,7 @@ export async function ExpenseListPage({ searchParams }: { searchParams: Promise<
             </table>
           </div>
         )}
-        <ListFooter total={total} page={page} pages={pages} href={(p) => buildHref("/giderler", { q, durum: payment, tur: kind, sayfa: p > 1 ? p : undefined })} summary={<><span>Toplam <Money value={totals.total} /></span><span>Ödenecek <Money value={totals.remaining} /></span></>} />
+        <ListFooter total={total} page={page} pages={pages} exportHref={buildHref("/api/disa-aktar/gider-listesi", { q, durum: payment })} href={(p) => buildHref("/giderler", { q, durum: payment, tur: kind, sayfa: p > 1 ? p : undefined })} summary={<><span>Toplam <Money value={totals.total} /></span><span>Ödenecek <Money value={totals.remaining} /></span></>} />
       </Card>
     </>
   );

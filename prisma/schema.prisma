@@ -893,3 +893,20 @@ model IncomingInvoice {
   @@index([issueDate])
   @@index([status])
 }
+
+// ── Yazdırma şablonu ayarları (tek satır: id = "yazdir") ───
+/// Kağıt fatura / teklif / proforma çıktısının alt bölümü. e-Belgelerin resmi görüntüsü NES'ten gelir.
+model PrintSettings {
+  id                 String   @id @default("yazdir")
+  /// Belge altına yazılacak not (ör. ödeme koşulları, teşekkür)
+  footerNote         String?
+  /// Altta IBAN'ı gösterilecek banka hesapları
+  bankAccountIds     String[]
+  /// "YALNIZ ... TL" satırı
+  showAmountInWords  Boolean  @default(true)
+  /// Teslim eden / teslim alan imza alanı
+  showSignature      Boolean  @default(false)
+  /// Faturada müşterinin güncel bakiyesi
+  showContactBalance Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
+}

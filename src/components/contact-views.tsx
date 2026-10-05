@@ -110,6 +110,7 @@ export async function ContactListPage({ kind, searchParams }: { kind: ContactKin
           page={page}
           pages={pages}
           href={href}
+          exportHref={archived ? undefined : buildHref(`/api/disa-aktar/${kind === "CUSTOMER" ? "musteriler" : "tedarikciler"}`, { q })}
           summary={
             <>
               <Link href={buildHref(L.path, { arsiv: archived ? undefined : "1" })} className="text-accent hover:underline">{archived ? "Aktif kayıtlar" : "Arşiv"}</Link>
