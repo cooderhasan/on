@@ -5,6 +5,7 @@ import { unitLabel } from "@/lib/units";
 import { PrintButton } from "./print-button";
 import Decimal from "decimal.js";
 import { getPrintSettings, printBankAccounts } from "@/server/services/print-settings";
+import { logoInfo } from "@/server/services/company";
 import { contactBalance } from "@/server/services/ledger";
 import { amountInWords } from "@/lib/ubl";
 import { formatIban } from "@/lib/iban";
@@ -30,7 +31,7 @@ interface PrintDoc {
 
 /** A4 yazdırma görünümü (kağıt fatura, proforma, teklif). e-Belgeler NES'in resmi görüntüsüyle yazdırılır (Faz 3). */
 export async function DocumentPrint({ doc }: { doc: PrintDoc }) {
-  const [company, settings] = await Promise.all([getCompany(), getPrintSettings()]);
+  const [company, settings, logo] = await Promise.all([getCompany(), getPrintSettings(), logoInfo()]);
   const [banks, balance] = await Promise.all([
     printBankAccounts(settings.bankAccountIds),
     settings.showContactBalance && doc.contactId ? contactBalance(doc.contactId) : Promise.resolve(null),
@@ -42,6 +43,8 @@ export async function DocumentPrint({ doc }: { doc: PrintDoc }) {
       <article className="mx-auto max-w-[210mm] bg-white p-[14mm] text-[12px] leading-relaxed text-black shadow print:shadow-none">
         <header className="flex justify-between gap-8 border-b-2 border-black pb-4">
           <div>
+            {/* eslint-disable-next-line @next/next/no-img-element -- yazdırma: oturumlu API'den logo */}
+            {logo && <img src={`/api/firma-logo?v=${logo.updatedAt.getTime()}`} alt="" className="mb-2 max-h-16 max-w-56 object-contain" />}
             <p className="text-base font-bold uppercase">{company?.title ?? "Firma bilgisi girilmedi"}</p>
             {company && (
               <>

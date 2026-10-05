@@ -1,11 +1,22 @@
 import { LogOut } from "lucide-react";
 import { requireUser } from "@/server/auth/session";
-import { ROLE_LABELS } from "@/server/auth/permissions";
+import { can, ROLE_LABELS, type Permission } from "@/server/auth/permissions";
+import { QuickCreate } from "@/components/quick-create";
 import { getCompanyName } from "@/server/company";
 import { Sidebar } from "@/components/sidebar";
 import Link from "next/link";
 import { NAV, NAV_SETTINGS, navFor } from "@/lib/nav";
 import { logoutAction } from "@/app/actions/auth";
+
+/** Hızlı oluştur menüsü (Paraşüt: satış faturası, hızlı fiş, alış faturası, müşteri) */
+const QUICK: Array<{ href: string; label: string; perm: Permission }> = [
+  { href: "/satislar/yeni", label: "Satış faturası", perm: "sales.write" },
+  { href: "/teklifler/yeni", label: "Teklif", perm: "sales.write" },
+  { href: "/giderler/kayit/yeni?tur=fis", label: "Hızlı fiş / fatura", perm: "expenses.write" },
+  { href: "/giderler/yeni", label: "Alış faturası", perm: "expenses.write" },
+  { href: "/musteriler/yeni", label: "Müşteri", perm: "sales.write" },
+  { href: "/tedarikciler/yeni", label: "Tedarikçi", perm: "expenses.write" },
+];
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
@@ -28,6 +39,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           </form>
         </header>
         <main className="flex-1 px-4 pb-24 lg:px-6">{children}</main>
+        <QuickCreate items={QUICK.filter((q) => can(user.role, q.perm)).map(({ href, label }) => ({ href, label }))} />
       </div>
     </div>
   );

@@ -7,7 +7,8 @@ import { db } from "@/server/db";
 import { getCompany } from "@/server/company";
 import { accountBalances } from "@/server/services/ledger";
 import { startOfToday } from "@/server/services/invoices";
-import { aging, cashFlowReport, daysLate, expenseReport, monthLabel, openPayables, openReceivables, salesReport, vatReport, type OpenItem } from "@/server/services/reports";
+import { runRecurring } from "@/server/services/recurring";
+import { aging, cashFlowReport, daysLate, expenseReport, monthLabel, openPayables, openReceivables, recentActivity, salesReport, vatReport, type OpenItem } from "@/server/services/reports";
 import { Card, CardHeader, EmptyState } from "./ui";
 import { Money } from "./money";
 import { cn } from "@/lib/cn";
@@ -64,6 +65,7 @@ export async function Dashboard({ user }: { user: CurrentUser }) {
   const expenses = can(user.role, "expenses.read");
   const cash = can(user.role, "cash.read");
   const reports = can(user.role, "reports.read");
+  if (can(user.role, "sales.write")) await runRecurring();
   const today = startOfToday();
   const monthStart = `${iso(today).slice(0, 7)}-01`;
   const lastMonthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
@@ -84,7 +86,7 @@ export async function Dashboard({ user }: { user: CurrentUser }) {
       : Promise.resolve(null),
     reports ? cashFlowReport(user, 0, 2) : Promise.resolve(null),
   ]);
-  const balances = await accountBalances(accounts.map((a) => a.id));
+  const [balances, recent] = await Promise.all([accountBalances(accounts.map((a) => a.id)), recentActivity(user)]);
 
   // Zaman çizelgesi: gecikmiş + 7 gün içinde vadesi gelenler
   const horizon = new Date(today.getTime() + 7 * 86_400_000);
@@ -163,6 +165,25 @@ export async function Dashboard({ user }: { user: CurrentUser }) {
                 </tbody>
               </table>
             </div>
+          </Card>
+        )}
+        {recent.length > 0 && (
+          <Card>
+            <CardHeader title="Son işlemler" />
+            <ul className="divide-y divide-border">
+              {recent.map((r) => (
+                <li key={`${r.href}-${r.at.getTime()}`} className="flex items-start justify-between gap-3 px-4 py-2.5 text-sm">
+                  <div className="min-w-0">
+                    <Link href={r.href} className="hover:text-accent">{r.label}</Link>
+                    <p className="truncate text-xs text-text-3">{r.sub}</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <Money value={r.amount} currency={r.currency} />
+                    <p className="text-[11px] text-text-3">{r.at.toLocaleString("tr-TR", { timeZone: "Europe/Istanbul", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </Card>
         )}
       </div>

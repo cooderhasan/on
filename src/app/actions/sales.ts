@@ -6,6 +6,7 @@ import { requireUser } from "@/server/auth/session";
 import { parseForm, safeAction } from "@/server/safe-action";
 import { deleteInvoice, getInvoice, saveInvoice } from "@/server/services/invoices";
 import { convertQuoteToInvoice, deleteQuote, saveQuote, setQuoteStatus } from "@/server/services/quotes";
+import { recurSchema, runRecurring, setRecurring, stopRecurring } from "@/server/services/recurring";
 import { cashMoveSchema, createCashMove, createSettlement, createTransfer, deleteTransaction, settlementSchema, transferSchema } from "@/server/services/transactions";
 import { documentHeaderSchema, parseDocDiscount, parseLines } from "@/lib/document-form";
 import { AppError } from "@/lib/errors";
@@ -156,4 +157,28 @@ export async function deleteQuoteAction(_: ActionState, fd: FormData): Promise<A
   });
   if (ok) redirect("/teklifler");
   return res;
+}
+
+// ── Tekrarlayan fatura ─────────────────────────────────────
+export async function setRecurringAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return safeAction(async () => {
+    const user = await requireUser();
+    const id = String(fd.get("invoiceId"));
+    await setRecurring(user, id, parseForm(recurSchema, fd));
+    // Bugün veya geçmiş bir tarih seçildiyse ilk kopya hemen oluşur
+    await runRecurring();
+    revalidatePath(`/satislar/${id}`);
+    revalidatePath("/satislar");
+    return { ok: true, message: "Tekrarlayan fatura kaydedildi." };
+  });
+}
+
+export async function stopRecurringAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return safeAction(async () => {
+    const user = await requireUser();
+    const id = String(fd.get("invoiceId"));
+    await stopRecurring(user, id);
+    revalidatePath(`/satislar/${id}`);
+    return { ok: true, message: "Tekrarlama durduruldu." };
+  });
 }

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/server/auth/session";
 import { parseForm, safeAction } from "@/server/safe-action";
-import { saveCompany } from "@/server/services/company";
+import { deleteLogo, saveCompany, saveLogo } from "@/server/services/company";
 import { createContact, KIND_LABELS, setContactArchived, updateContact } from "@/server/services/contacts";
 import { createProduct, setProductArchived, updateProduct } from "@/server/services/products";
 import { createAccount, setAccountArchived, updateAccount } from "@/server/services/accounts";
@@ -143,5 +143,24 @@ export async function savePrintSettingsAction(_: ActionState, fd: FormData): Pro
     await savePrintSettings(user, parseForm(printSettingsSchema, fd), fd.getAll("bankAccountId").map(String));
     revalidatePath("/yazdirma-sablonlari");
     return { ok: true, message: "Yazdırma ayarları kaydedildi." };
+  });
+}
+
+export async function saveLogoAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return safeAction(async () => {
+    const user = await requireUser();
+    const f = fd.get("logo");
+    await saveLogo(user, f instanceof File ? f : null);
+    revalidatePath("/firma-bilgileri");
+    return { ok: true, message: "Logo kaydedildi." };
+  });
+}
+
+export async function deleteLogoAction(): Promise<ActionState> {
+  return safeAction(async () => {
+    const user = await requireUser();
+    await deleteLogo(user);
+    revalidatePath("/firma-bilgileri");
+    return { ok: true, message: "Logo kaldırıldı." };
   });
 }

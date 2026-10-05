@@ -6,12 +6,14 @@ import { can } from "@/server/auth/permissions";
 import { getCompany } from "@/server/company";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
 import { InfoRow } from "@/components/list";
+import { LogoForm } from "@/components/logo-form";
+import { logoInfo } from "@/server/services/company";
 
 export const metadata: Metadata = { title: "Firma Bilgileri" };
 
 export default async function CompanyPage() {
   const user = await requireUser();
-  const company = await getCompany();
+  const [company, logo] = await Promise.all([getCompany(), logoInfo()]);
   const canEdit = can(user.role, "settings.manage");
   // Henüz girilmediyse doğrudan form
   if (!company && canEdit) redirect("/firma-bilgileri/duzenle");
@@ -48,6 +50,20 @@ export default async function CompanyPage() {
           </dl>
         )}
       </Card>
+      {(logo || canEdit) && (
+        <Card className="mt-4">
+          <div className="border-b border-border px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-text-2">Logo</div>
+          <div className="flex flex-wrap items-start gap-6 p-4">
+            {logo ? (
+              // eslint-disable-next-line @next/next/no-img-element -- oturumlu API'den gelen küçük görsel
+              <img src={`/api/firma-logo?v=${logo.updatedAt.getTime()}`} alt="Firma logosu" className="max-h-20 max-w-60 object-contain" />
+            ) : (
+              <p className="text-sm text-text-3">Logo yüklenmedi. Yüklenirse kağıt fatura, teklif ve irsaliye çıktılarının başında görünür.</p>
+            )}
+            {canEdit && <LogoForm hasLogo={Boolean(logo)} />}
+          </div>
+        </Card>
+      )}
     </>
   );
 }

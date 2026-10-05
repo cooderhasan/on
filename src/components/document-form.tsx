@@ -5,6 +5,7 @@ import Link from "next/link";
 import Decimal from "decimal.js";
 import { Bell, Building2, Calendar, CircleHelp, FileText, Pencil, Plus, Tag, Tags, Warehouse, X } from "lucide-react";
 import { saveInvoiceAction, saveQuoteAction } from "@/app/actions/sales";
+import { tcmbRateAction } from "@/app/actions/rates";
 import { ActionForm, FormMessage } from "./forms";
 import { FormHeader } from "./record-forms";
 import { Button, FormRow, Input, Select, Textarea } from "./ui";
@@ -99,6 +100,21 @@ export function DocumentForm({
   const contact = contacts.find((c) => c.id === contactId) ?? null;
   const [currency, setCurrency] = useState(values.currency);
   const [showCurrency, setShowCurrency] = useState(values.currency !== "TRY");
+  const [rate, setRate] = useState(values.exchangeRate && values.exchangeRate !== "1" ? tr(values.exchangeRate) : "");
+  const [rateNote, setRateNote] = useState<{ text: string; error?: boolean } | null>(null);
+  const [rateBusy, setRateBusy] = useState(false);
+  /** TCMB döviz alış kuru (belge tarihinden önceki iş günü bülteni) */
+  const fetchRate = async (cur: string, date: string) => {
+    if (cur === "TRY") return;
+    setRateBusy(true);
+    setRateNote(null);
+    const r = await tcmbRateAction(cur, date);
+    setRateBusy(false);
+    if (r.rate) {
+      setRate(tr(new Decimal(r.rate).toDecimalPlaces(4).toString()));
+      setRateNote({ text: `TCMB döviz alış · ${r.bulletinDate!.split("-").reverse().join(".")} bülteni` });
+    } else setRateNote({ text: r.error ?? "Kur alınamadı.", error: true });
+  };
   const [showNo, setShowNo] = useState(Boolean(values.docNo));
   const [showOrder, setShowOrder] = useState(Boolean(values.orderNo || values.orderDate));
   const [issueDate, setIssueDate] = useState(values.issueDate);
@@ -186,6 +202,7 @@ export function DocumentForm({
                     if (c) {
                       setCurrency(c.currency);
                       setShowCurrency(c.currency !== "TRY");
+                      if (c.currency !== "TRY" && !rate) void fetchRate(c.currency, issueDate);
                     }
                   }}
                 >
@@ -269,11 +286,17 @@ export function DocumentForm({
               {showCurrency ? (
                 <FormRow label="Döviz" htmlFor="currency" error={s.fieldErrors?.currency ?? s.fieldErrors?.exchangeRate} hint="Belge, carinin izlendiği dövizde olmalı.">
                   <div className="flex flex-wrap gap-2">
-                    <Select id="currency" name="currency" value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-28">
+                    <Select id="currency" name="currency" value={currency} onChange={(e) => { setCurrency(e.target.value); setRate(""); if (e.target.value !== "TRY") void fetchRate(e.target.value, issueDate); }} className="w-28">
                       {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
                     </Select>
-                    {currency !== "TRY" && <Input name="exchangeRate" inputMode="decimal" placeholder="Kur (1 birim = ? TL)" defaultValue={values.exchangeRate && values.exchangeRate !== "1" ? tr(values.exchangeRate) : ""} className="w-48 font-mono" />}
+                    {currency !== "TRY" && (
+                      <>
+                        <Input name="exchangeRate" inputMode="decimal" placeholder="Kur (1 birim = ? TL)" value={rate} onChange={(e) => { setRate(e.target.value); setRateNote(null); }} className="w-40 font-mono" />
+                        <Button type="button" variant="secondary" size="sm" disabled={rateBusy} onClick={() => fetchRate(currency, issueDate)}>{rateBusy ? "Alınıyor…" : "TCMB'den al"}</Button>
+                      </>
+                    )}
                   </div>
+                  {rateNote && <p className={cn("mt-1 text-[11px]", rateNote.error ? "text-danger" : "text-text-3")}>{rateNote.text}</p>}
                 </FormRow>
               ) : (
                 <input type="hidden" name="currency" value={currency} />

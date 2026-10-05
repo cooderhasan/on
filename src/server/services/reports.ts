@@ -2,7 +2,7 @@ import "server-only";
 import Decimal from "decimal.js";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
-import { assertCan } from "@/server/auth/permissions";
+import { assertCan, can } from "@/server/auth/permissions";
 import type { CurrentUser } from "@/server/auth/session";
 import { VOID_EDOC } from "@/lib/edoc-status";
 import { EXPENSE_KIND_LABELS } from "./expenses";
@@ -440,4 +440,35 @@ export async function stockReport(user: CurrentUser, warehouseId?: string) {
   const totals = new Map<string, Decimal>();
   for (const r of rows) if (r.value && r.quantity.greaterThan(0)) totals.set(r.buyCurrency, (totals.get(r.buyCurrency) ?? ZERO).plus(r.value));
   return { rows, totals: [...totals].map(([currency, total]) => ({ currency, total })) };
+}
+
+// ── Son işlemler (Güncel Durum) ────────────────────────────
+
+export interface RecentItem { at: Date; label: string; sub: string; href: string; amount: Decimal; currency: string }
+
+/** Son eklenen kayıtlar (kullanıcının görebildikleri): faturalar, giderler, tahsilat / ödemeler */
+export async function recentActivity(user: CurrentUser, take = 8): Promise<RecentItem[]> {
+  const sales = can(user.role, "sales.read");
+  const expenses = can(user.role, "expenses.read");
+  const cash = can(user.role, "cash.read");
+  const dirs = [...(sales ? (["SALE"] as const) : []), ...(expenses ? (["PURCHASE"] as const) : [])];
+  const [invs, exps, txs] = await Promise.all([
+    dirs.length ? db.invoice.findMany({ where: { direction: { in: [...dirs] } }, orderBy: { createdAt: "desc" }, take, select: { id: true, direction: true, kind: true, name: true, invoiceNo: true, createdAt: true, payableTotal: true, currency: true, contact: { select: { title: true } } } }) : Promise.resolve([]),
+    expenses ? db.expense.findMany({ orderBy: { createdAt: "desc" }, take, select: { id: true, kind: true, description: true, createdAt: true, totalAmount: true, currency: true } }) : Promise.resolve([]),
+    cash ? db.transaction.findMany({ where: { accountId: { not: null } }, orderBy: { createdAt: "desc" }, take, select: { id: true, type: true, createdAt: true, amount: true, description: true, account: { select: { id: true, name: true, currency: true } }, contact: { select: { title: true } }, employee: { select: { name: true } } } }) : Promise.resolve([]),
+  ]);
+  const TX: Record<string, string> = { COLLECTION: "Tahsilat", PAYMENT: "Ödeme", TRANSFER: "Virman", DEPOSIT: "Para girişi", WITHDRAWAL: "Para çıkışı" };
+  const items: RecentItem[] = [
+    ...invs.map((i) => ({
+      at: i.createdAt,
+      label: i.direction === "SALE" ? (i.kind === "RETURN" ? "Satış iadesi" : "Satış faturası") : i.kind === "RETURN" ? "Alış iadesi" : "Alış faturası",
+      sub: [i.contact.title, i.invoiceNo || i.name].filter(Boolean).join(" · "),
+      href: `${i.direction === "SALE" ? "/satislar" : "/giderler"}/${i.id}`,
+      amount: D(i.payableTotal),
+      currency: i.currency,
+    })),
+    ...exps.map((e) => ({ at: e.createdAt, label: EXPENSE_KIND_LABELS[e.kind], sub: e.description, href: `/giderler/kayit/${e.id}`, amount: D(e.totalAmount), currency: e.currency })),
+    ...txs.map((t) => ({ at: t.createdAt, label: TX[t.type] ?? t.type, sub: [t.contact?.title ?? t.employee?.name, t.account?.name, t.description].filter(Boolean).join(" · "), href: `/kasa-ve-bankalar/${t.account!.id}`, amount: D(t.amount), currency: t.account!.currency })),
+  ];
+  return items.sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, take);
 }

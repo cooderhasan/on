@@ -4,11 +4,13 @@ import { SYSTEM_USER_ID } from "@/server/audit";
 import type { CurrentUser } from "@/server/auth/session";
 import { refreshStatus } from "@/server/services/einvoice";
 import { syncIncoming } from "@/server/services/incoming";
+import { runRecurring } from "@/server/services/recurring";
 
 /**
  * Otomatik işler (Coolify zamanlanmış görevi /api/zamanlayici'yi çağırır):
  *  - Gönderilmiş e-belgelerin durumunu NES'ten sorgular (resmileşti / ret / hata, ticari faturada alıcı yanıtı)
  *  - Gelen e-faturaları içeri alır
+ *  - Vadesi gelen tekrarlayan faturaları oluşturur (NES ayarı olmasa da)
  * Tek container: aynı anda ikinci çalıştırma bellek bayrağıyla engellenir.
  */
 const SYSTEM_USER: CurrentUser = { id: SYSTEM_USER_ID, name: "Zamanlayıcı", email: "", role: "ADMIN", isActive: true };
@@ -20,8 +22,9 @@ export async function runScheduledJobs() {
   if (running) return { skipped: true as const };
   running = true;
   try {
+    const recurring = await runRecurring();
     const settings = await db.eInvoiceSettings.findUnique({ where: { id: "nes" }, select: { apiKeyEnc: true } });
-    if (!settings?.apiKeyEnc) return { skipped: true as const, reason: "NES ayarı yok" };
+    if (!settings?.apiKeyEnc) return { skipped: true as const, reason: "NES ayarı yok", recurring };
     const pending = await db.invoice.findMany({
       where: {
         eDocUuid: { not: null },
@@ -55,7 +58,7 @@ export async function runScheduledJobs() {
       errors.push(`gelen: ${(err as Error).message.slice(0, 200)}`);
     }
     if (errors.length) console.error("[zamanlayıcı]", errors);
-    return { skipped: false as const, refreshed, pending: pending.length, incoming, errors: errors.length };
+    return { skipped: false as const, recurring, refreshed, pending: pending.length, incoming, errors: errors.length };
   } finally {
     running = false;
   }

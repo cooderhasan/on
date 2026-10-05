@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/server/auth/session";
 import { getWaybill } from "@/server/services/waybills";
 import { getCompany } from "@/server/company";
+import { logoInfo } from "@/server/services/company";
 import { orNotFound } from "@/server/page-helpers";
 import { PrintButton } from "@/components/print-button";
 import { qty } from "@/components/stock-views";
@@ -17,7 +18,7 @@ export default async function Page(props: PageProps<"/giden-irsaliyeler/[id]/yaz
   const user = await requireUser("sales.read");
   const w = await orNotFound(getWaybill(user, (await props.params).id));
   if (w.direction !== "SALE") notFound();
-  const company = await getCompany();
+  const [company, logo] = await Promise.all([getCompany(), logoInfo()]);
   const c = w.contact;
   return (
     <div className="min-h-dvh bg-[#e4e4e4] py-6 print:bg-white print:py-0">
@@ -25,6 +26,8 @@ export default async function Page(props: PageProps<"/giden-irsaliyeler/[id]/yaz
       <article className="mx-auto max-w-[210mm] bg-white p-[14mm] text-[12px] leading-relaxed text-black shadow print:shadow-none">
         <header className="flex justify-between gap-8 border-b-2 border-black pb-4">
           <div>
+            {/* eslint-disable-next-line @next/next/no-img-element -- yazdırma: oturumlu API'den logo */}
+            {logo && <img src={`/api/firma-logo?v=${logo.updatedAt.getTime()}`} alt="" className="mb-2 max-h-16 max-w-56 object-contain" />}
             <p className="text-base font-bold uppercase">{company?.title ?? "Firma bilgisi girilmedi"}</p>
             {company && (
               <>

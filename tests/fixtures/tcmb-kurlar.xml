@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="isokur.xsl"?>
+<Tarih_Date Tarih="02.10.2026" Date="10/02/2026"  Bulten_No="2026/186" >
+	<Currency CrossOrder="0" Kod="USD" CurrencyCode="USD">
+			<Unit>1</Unit>
+			<Isim>ABD DOLARI</Isim>
+			<CurrencyName>US DOLLAR</CurrencyName>
+			<ForexBuying>48.9699</ForexBuying>
+			<ForexSelling>49.0582</ForexSelling>
+			<BanknoteBuying>48.9357</BanknoteBuying>
+			<BanknoteSelling>49.1318</BanknoteSelling>
+			<CrossRateUSD/>
+			<CrossRateOther/>
+		
+	</Currency>
+<Currency CrossOrder="9" Kod="EUR" CurrencyCode="EUR">
+			<Unit>1</Unit>
+			<Isim>EURO</Isim>
+			<CurrencyName>EURO</CurrencyName>
+			<ForexBuying>55.0826</ForexBuying>
+			<ForexSelling>55.1819</ForexSelling>
+			<BanknoteBuying>55.0441</BanknoteBuying>
+			<BanknoteSelling>55.2646</BanknoteSelling>
+				<CrossRateUSD/>
+				<CrossRateOther>1.1248</CrossRateOther>
+		
+	</Currency>
+<Currency CrossOrder="10" Kod="GBP" CurrencyCode="GBP">
+			<Unit>1</Unit>
+			<Isim>İNGİLİZ STERLİNİ</Isim>
+			<CurrencyName>POUND STERLING</CurrencyName>
+			<ForexBuying>64.5796</ForexBuying>
+			<ForexSelling>64.9163</ForexSelling>
+			<BanknoteBuying>64.5344</BanknoteBuying>
+			<BanknoteSelling>65.0137</BanknoteSelling>
+				<CrossRateUSD/>
+				<CrossRateOther>1.3210</CrossRateOther>
+		
+	</Currency>
+<Currency CrossOrder="5" Kod="JPY" CurrencyCode="JPY">
+			<Unit>100</Unit>
+			<Isim>JAPON YENİ</Isim>
+			<CurrencyName>JAPENESE YEN</CurrencyName>
+			<ForexBuying>30.9865</ForexBuying>
+			<ForexSelling>31.1917</ForexSelling>
+			<BanknoteBuying>30.8719</BanknoteBuying>
+			<BanknoteSelling>31.3102</BanknoteSelling>
+				<CrossRateUSD>157.66</CrossRateUSD>
+				<CrossRateOther/>
+		
+	</Currency>
+</Tarih_Date>

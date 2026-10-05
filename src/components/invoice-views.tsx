@@ -8,6 +8,8 @@ import { getInvoice, listInvoices, type PaymentFilter } from "@/server/services/
 import { activeWarehouses } from "@/server/services/stock";
 import { priceListsForForm } from "@/server/services/price-lists";
 import { getWaybill } from "@/server/services/waybills";
+import { addPeriod, getRecurring, runRecurring } from "@/server/services/recurring";
+import { RecurringForm } from "./recurring-form";
 import { listCategories, listTags } from "@/server/services/categories";
 import { orNotFound, pageParam, strParam } from "@/server/page-helpers";
 import { deleteInvoiceAction } from "@/app/actions/sales";
@@ -49,6 +51,8 @@ export function DocStatusBadge({ status, profile }: { status: string; profile: s
 
 export async function InvoiceListPage({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requireUser("sales.read");
+  // Zamanlayıcı kurulmamışsa (yerel) vadesi gelen tekrarlayan faturalar burada oluşur
+  if (can(user.role, "sales.write")) await runRecurring();
   const sp = await searchParams;
   const q = strParam(sp.q);
   const payment = strParam(sp.durum) as PaymentFilter | undefined;
@@ -138,7 +142,7 @@ export async function InvoiceListPage({ searchParams }: { searchParams: Promise<
           pages={pages}
           href={href}
           exportHref={buildHref("/api/disa-aktar/satis-faturalari", { q, durum: payment, baslangic: from, bitis: to })}
-          summary={<>{totals.payable.map((t) => <span key={t.currency}>Toplam <Money value={t.total} currency={t.currency} /></span>)}{totals.remaining.map((t) => <span key={t.currency}>Tahsil edilecek <Money value={t.total} currency={t.currency} /></span>)}</>}
+          summary={<><Link href="/satislar/tekrarlayan" className="text-accent hover:underline">Tekrarlayan faturalar</Link>{totals.payable.map((t) => <span key={t.currency}>Toplam <Money value={t.total} currency={t.currency} /></span>)}{totals.remaining.map((t) => <span key={t.currency}>Tahsil edilecek <Money value={t.total} currency={t.currency} /></span>)}</>}
         />
       </Card>
     </>
@@ -160,6 +164,7 @@ export async function InvoiceDetailPage({ params, searchParams, direction = "SAL
   const sp = await searchParams;
   const canWrite = can(user.role, M.write) && can(user.role, "cash.write");
   const canSend = can(user.role, "einvoice.send");
+  const recurring = direction === "SALE" && inv.kind === "INVOICE" ? await getRecurring(inv.id) : null;
   const accounts = canWrite ? await db.account.findMany({ where: { isArchived: false }, select: { id: true, name: true, currency: true }, orderBy: { name: "asc" } }) : [];
   const title = inv.name || (inv.kind === "RETURN" ? "İade Faturası" : M.single);
   const c = inv.contact;
@@ -204,6 +209,7 @@ export async function InvoiceDetailPage({ params, searchParams, direction = "SAL
               <p className="text-xs">Vade: {fmtDate(inv.dueDate)}</p>
               {inv.currency !== "TRY" && <p className="text-xs">Kur: 1 {inv.currency} = {inv.exchangeRate.toString()} TL</p>}
               {inv.quote && <p className="text-xs"><Link href={`/teklifler/${inv.quote.id}`} className="text-accent hover:underline">Tekliften oluşturuldu</Link></p>}
+              {inv.recurring && <p className="text-xs"><Link href={`/satislar/${inv.recurring.templateId}`} className="text-accent hover:underline">Tekrarlayan faturadan oluşturuldu</Link></p>}
               {inv.waybills.map((w) => (
                 <p key={w.id} className="text-xs"><Link href={`${direction === "SALE" ? "/giden-irsaliyeler" : "/gelen-irsaliyeler"}/${w.id}`} className="text-accent hover:underline">İrsaliye {w.waybillNo ?? fmtDate(w.dispatchDate)}</Link></p>
               ))}
@@ -305,6 +311,37 @@ export async function InvoiceDetailPage({ params, searchParams, direction = "SAL
               </ul>
             )}
           </Card>
+          {direction === "SALE" && inv.kind === "INVOICE" && (recurring || can(user.role, "sales.write")) && (
+            <Card className="p-4 text-sm">
+              <p className="mb-2 text-[11px] font-semibold uppercase text-text-2">Tekrarlayan fatura</p>
+              {recurring && (
+                <div className="mb-2 text-xs text-text-2">
+                  {recurring.isActive ? (
+                    <p>{recurring.interval > 1 ? `${recurring.interval} ` : ""}{recurring.period === "MONTHLY" ? "Ayda" : "Yılda"} bir · sonraki: <b>{fmtDate(recurring.nextDate)}</b>{recurring.endDate && ` · bitiş ${fmtDate(recurring.endDate)}`}</p>
+                  ) : (
+                    <p className="text-text-3">Durduruldu</p>
+                  )}
+                  {recurring.invoices.length > 0 && (
+                    <ul className="mt-1 flex flex-col gap-0.5">
+                      {recurring.invoices.map((r) => <li key={r.id}><Link href={`/satislar/${r.id}`} className="text-accent hover:underline">{fmtDate(r.issueDate)}{r.invoiceNo ? ` · ${r.invoiceNo}` : ""}</Link></li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
+              {can(user.role, "sales.write") && (
+                <RecurringForm
+                  invoiceId={inv.id}
+                  active={Boolean(recurring?.isActive)}
+                  values={{
+                    period: recurring?.period ?? "MONTHLY",
+                    interval: recurring?.interval ?? 1,
+                    nextDate: (recurring?.nextDate ?? addPeriod(inv.issueDate, "MONTHLY", 1, inv.issueDate.getUTCDate())).toISOString().slice(0, 10),
+                    endDate: recurring?.endDate?.toISOString().slice(0, 10) ?? null,
+                  }}
+                />
+              )}
+            </Card>
+          )}
           {can(user.role, M.write) && inv.deletable && <ConfirmDelete action={deleteInvoiceAction} id={inv.id} label="Faturayı sil" confirmText="Fatura kalıcı olarak silinsin mi?" />}
         </aside>
       </div>
