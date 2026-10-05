@@ -38,11 +38,18 @@ export function nesErrorMessage(status: number, body: string): string {
   try {
     const j = JSON.parse(body) as Record<string, unknown>;
     const errors = j.errors;
-    const list = Array.isArray(errors)
-      ? errors.map((e) => (typeof e === "string" ? e : (e as { message?: string; description?: string })?.message ?? (e as { description?: string })?.description ?? JSON.stringify(e)))
-      : errors && typeof errors === "object"
-        ? Object.values(errors as Record<string, unknown>).flat().map(String)
-        : [];
+    // 422: errors[].detail asıl nedeni taşır (ör. şematron kuralının metni); 400: invalidFields[].field + description
+    const item = (e: unknown) => {
+      if (typeof e === "string") return e;
+      const x = e as { message?: string; description?: string; detail?: string; field?: string; code?: string };
+      const head = x.field ? `${x.field}: ${x.description ?? ""}` : (x.message ?? x.description ?? "");
+      const detail = x.detail && x.detail !== head ? x.detail : "";
+      return [head, detail].filter((t) => t && t.trim()).join(" — ") || JSON.stringify(e);
+    };
+    const list = [
+      ...(Array.isArray(errors) ? errors.map(item) : errors && typeof errors === "object" ? Object.values(errors as Record<string, unknown>).flat().map(String) : []),
+      ...(Array.isArray(j.invalidFields) ? (j.invalidFields as unknown[]).map(item) : []),
+    ];
     msg = [j.message, j.title, j.detail, j.description, ...list].filter((x) => typeof x === "string" && x.trim()).join(" · ");
   } catch {
     msg = body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);

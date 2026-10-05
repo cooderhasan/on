@@ -4,6 +4,7 @@ import { can } from "@/server/auth/permissions";
 import { checkLoginRate, resetLoginRate } from "@/server/auth/rate-limit";
 import { formatMoney, formatMoneyParts, parseMoneyInput, round2 } from "@/lib/money";
 import { activeGroupKey, ALL_LINKS } from "@/lib/nav";
+import { nesErrorMessage } from "@/server/nes/client";
 
 /** Birim fiyat biçimi (4 haneye kadar) */
 const formatMoneyPartsStr = (v: string) => { const p = formatMoneyParts(v, "TRY", 4); return `${p.sign}${p.int},${p.frac}${p.symbol}`; };
@@ -74,5 +75,13 @@ describe("menü", () => {
     expect(activeGroupKey("/raporlar/kdv")).toBe("expenses");
     expect(activeGroupKey("/firma-bilgileri")).toBe("settings");
     expect(activeGroupKey("/")).toBeNull();
+  });
+});
+
+describe("NES hata mesajı", () => {
+  it("422 şematron ayrıntısı ve 400 alan hataları gösterilir", () => {
+    const m = nesErrorMessage(422, JSON.stringify({ message: "HATALI ISTEK", errors: [{ code: "1150", description: "SCHEMATRON_CHECK_RESULT_HAS_FAILED", detail: "Satıcı vergi dairesi boş olamaz" }] }));
+    expect(m).toBe("NES hatası (422): HATALI ISTEK · SCHEMATRON_CHECK_RESULT_HAS_FAILED — Satıcı vergi dairesi boş olamaz");
+    expect(nesErrorMessage(400, JSON.stringify({ message: "GECERSIZ ISTEK", invalidFields: [{ field: "SenderAlias", description: "Gönderici Etiketi boş geçilemez!", detail: "" }] }))).toBe("NES hatası (400): GECERSIZ ISTEK · SenderAlias: Gönderici Etiketi boş geçilemez!");
   });
 });

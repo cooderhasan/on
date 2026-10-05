@@ -164,6 +164,19 @@ export async function prepareSend(user: CurrentUser, invoiceId: string) {
   return { isEInvoiceUser: Boolean(alias), alias, profile, errors, env: envLabel(cfg.apiUrl), status: inv.eDocStatus };
 }
 
+/** Gönderilecek XML'in önizlemesi (destek / hata ayıklama): NES'e gönderilmez */
+export async function invoiceXmlPreview(user: CurrentUser, invoiceId: string) {
+  assertCan(user, "einvoice.send");
+  const inv = await loadForSend(invoiceId);
+  const company = await getCompany();
+  if (!company) throw new AppError("VALIDATION", "Firma bilgileri girilmemiş.");
+  const s = await db.eInvoiceSettings.findUnique({ where: { id: "nes" } });
+  const profile = (inv.eDocProfile as UblProfile | null) ?? "EARSIVFATURA";
+  const series = (profile === "EARSIVFATURA" ? s?.eArchiveSeries : s?.eInvoiceSeries) ?? "";
+  const ubl = { ...toUbl(inv, company, profile, series, "ELEKTRONIK"), uuid: inv.eDocUuid ?? "00000000-0000-0000-0000-000000000000" };
+  return { xml: buildInvoiceXml(ubl), errors: validateForUbl(ubl) };
+}
+
 export const sendSchema = z.object({
   profile: z.enum(["TICARIFATURA", "TEMELFATURA", "EARSIVFATURA"]),
   sendType: z.enum(["ELEKTRONIK", "KAGIT"]).default("ELEKTRONIK"),
