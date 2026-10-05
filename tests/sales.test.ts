@@ -123,7 +123,7 @@ describe("tahsilat ve kasa", () => {
     const id = await saveInvoice(u, null, inv()); // 120
     await createSettlement(u, settlementSchema.parse({ invoiceId: id, accountId: kasa.id, date: "2026-09-05", amount: "50" }));
     expect((await getInvoice(u, id)).remaining.toString()).toBe("70");
-    await expect(createSettlement(u, settlementSchema.parse({ invoiceId: id, accountId: kasa.id, date: "2026-09-06", amount: "70,01" }))).rejects.toThrow(/kalan tutarı/);
+    await expect(createSettlement(u, settlementSchema.parse({ invoiceId: id, accountId: kasa.id, date: "2026-09-06", amount: "70,01" }))).rejects.toThrow(/Kalan tutar/);
     expect((await getAccount(u, kasa.id)).balance.toString()).toBe("1050");
     expect((await contactBalance(customer.id)).toString()).toBe("70");
   });

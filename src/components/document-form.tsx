@@ -71,9 +71,11 @@ const addDays = (iso: string, n: number) => {
 const dec = (s: string) => parseMoneyInput(s) ?? new Decimal(0);
 
 export function DocumentForm({
-  mode, values, contacts, products, categories, tags, accounts, cancelHref,
+  mode, direction = "SALE", values, contacts, products, categories, tags, accounts, cancelHref,
 }: {
   mode: "invoice" | "quote";
+  /** Satış (müşteri) veya alış (tedarikçi) faturası */
+  direction?: "SALE" | "PURCHASE";
   values: DocumentFormValues;
   contacts: FormContact[];
   products: FormProduct[];
@@ -136,14 +138,20 @@ export function DocumentForm({
   );
 
   const action = isQuote ? saveQuoteAction : saveInvoiceAction;
-  const title = isQuote ? "Teklif" : values.kind === "RETURN" ? "İade Faturası" : "Satış Faturası";
+  const isPurchase = direction === "PURCHASE";
+  const title = isQuote ? "Teklif" : values.kind === "RETURN" ? "İade Faturası" : isPurchase ? "Alış Faturası" : "Satış Faturası";
+  const party = isPurchase ? "Tedarikçi" : "Müşteri";
+  // Para girişi: satış faturası / alış iadesi; çıkış: alış faturası / satış iadesi
+  const moneyIn = isPurchase === (values.kind === "RETURN");
+  // Stok girişi: alış faturası / satış iadesi
+  const stockIn = isPurchase !== (values.kind === "RETURN");
 
   return (
     <ActionForm action={action} className="gap-0">
       {(s) => (
         <>
           {values.id && <input type="hidden" name="id" value={values.id} />}
-          <input type="hidden" name="direction" value="SALE" />
+          <input type="hidden" name="direction" value={direction} />
           <input type="hidden" name="kind" value={values.kind} />
           <FormHeader cancelHref={cancelHref}>
             <FormRow label={isQuote ? "Teklif ismi" : "Fatura ismi"} htmlFor="name" icon={<FileText />}>
@@ -154,7 +162,7 @@ export function DocumentForm({
 
           <div className="grid gap-4 py-2 xl:grid-cols-[minmax(0,1fr)_280px]">
             <div>
-              <FormRow label="Müşteri" htmlFor="contactId" icon={<Building2 />} error={s.fieldErrors?.contactId}>
+              <FormRow label={party} htmlFor="contactId" icon={<Building2 />} error={s.fieldErrors?.contactId}>
                 <Select
                   id="contactId"
                   name="contactId"
@@ -168,23 +176,23 @@ export function DocumentForm({
                     }
                   }}
                 >
-                  <option value="">Müşteri seçin…</option>
+                  <option value="">{party} seçin…</option>
                   {contacts.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
                 </Select>
                 <p className="mt-1 text-[11px] italic text-text-3">
-                  Listede yoksa <Link href="/musteriler/yeni" className="text-accent hover:underline" target="_blank">yeni müşteri oluşturun</Link> ve sayfayı yenileyin.
+                  Listede yoksa <Link href={isPurchase ? "/tedarikciler/yeni" : "/musteriler/yeni"} className="text-accent hover:underline" target="_blank">yeni {party.toLocaleLowerCase("tr")} oluşturun</Link> ve sayfayı yenileyin.
                 </p>
               </FormRow>
-              <FormRow label="Müşteri bilgileri">
+              <FormRow label={`${party} bilgileri`}>
                 <p className="pt-2 text-sm text-text-2">
                   {contact ? [contact.address, [contact.district, contact.city].filter(Boolean).join(" / "), contact.taxNumber && `${contact.taxNumber.length === 11 ? "TCKN" : "VKN"} ${contact.taxNumber}`].filter(Boolean).join(" · ") || "—" : "—"}
                 </p>
               </FormRow>
 
               {!isQuote && !values.id && (
-                <FormRow label={values.kind === "RETURN" ? "Ödeme durumu" : "Tahsilat durumu"} icon={<CircleHelp />} error={s.fieldErrors?.settleAccountId}>
+                <FormRow label={moneyIn ? "Tahsilat durumu" : "Ödeme durumu"} icon={<CircleHelp />} error={s.fieldErrors?.settleAccountId}>
                   <div className="grid grid-cols-2 overflow-hidden rounded-sm border border-[#d6d6d6] text-sm">
-                    {([["no", values.kind === "RETURN" ? "Ödenecek" : "Tahsil edilecek"], ["yes", values.kind === "RETURN" ? "Ödendi" : "Tahsil edildi"]] as const).map(([v, label], i) => (
+                    {([["no", moneyIn ? "Tahsil edilecek" : "Ödenecek"], ["yes", moneyIn ? "Tahsil edildi" : "Ödendi"]] as const).map(([v, label], i) => (
                       <label key={v} className={cn("flex cursor-pointer items-center gap-2 px-3 py-2 font-medium uppercase", i > 0 && "border-l border-[#d6d6d6]", settled === v ? "bg-white" : "bg-card-muted text-text-2")}>
                         <input type="radio" name="settled" value={v} checked={settled === v} onChange={() => setSettled(v)} className="accent-accent" />
                         {label}
@@ -197,7 +205,7 @@ export function DocumentForm({
                         <option value="">Kasa / banka seçin…</option>
                         {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
                       </Select>
-                      <Input name="settleDate" type="date" defaultValue={issueDate} aria-label="Tahsilat tarihi" />
+                      <Input name="settleDate" type="date" defaultValue={issueDate} aria-label={moneyIn ? "Tahsilat tarihi" : "Ödeme tarihi"} />
                     </div>
                   )}
                 </FormRow>
@@ -271,7 +279,7 @@ export function DocumentForm({
               {!isQuote && (
                 <FormRow label="Stok takibi" icon={<Warehouse />}>
                   <div className="grid grid-cols-2 overflow-hidden rounded-sm border border-[#d6d6d6] text-sm">
-                    {([["WITH_INVOICE", values.kind === "RETURN" ? "Stok girişi yapılsın" : "Stok çıkışı yapılsın"], ["NONE", values.kind === "RETURN" ? "Stok girişi yapılmasın" : "Stok çıkışı yapılmasın"]] as const).map(([v, label], i) => (
+                    {([["WITH_INVOICE", stockIn ? "Stok girişi yapılsın" : "Stok çıkışı yapılsın"], ["NONE", stockIn ? "Stok girişi yapılmasın" : "Stok çıkışı yapılmasın"]] as const).map(([v, label], i) => (
                       <label key={v} className={cn("flex cursor-pointer items-start gap-2 px-3 py-2 text-xs font-medium uppercase", i > 0 && "border-l border-[#d6d6d6]")}>
                         <input type="radio" name="stockMode" value={v} defaultChecked={values.stockMode === v} className="mt-0.5 accent-accent" />
                         {label}
@@ -285,7 +293,7 @@ export function DocumentForm({
             <aside className="mx-4 flex flex-col gap-4 self-start rounded bg-card-muted p-4 xl:mx-0 xl:mr-4">
               {!isQuote && (
                 <label className="flex flex-col gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-2">
-                  <span className="flex items-center gap-1.5"><Tag className="size-3.5" /> {isQuote ? "" : "Fatura kategorisi"}</span>
+                  <span className="flex items-center gap-1.5"><Tag className="size-3.5" /> {isPurchase ? "Gider kategorisi" : "Fatura kategorisi"}</span>
                   <Select name="categoryId" defaultValue={values.categoryId ?? ""} className="normal-case">
                     <option value="">Kategorisiz</option>
                     {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}

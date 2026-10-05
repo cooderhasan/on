@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
 export function ListToolbar({ action, q, placeholder = "Ara…", hidden, filters, actions }: { action: string; q?: string; placeholder?: string; hidden?: Record<string, string | undefined>; filters?: ReactNode; actions?: ReactNode }) {
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
-      <form action={action} className="flex min-w-0 flex-1 items-center gap-2 rounded bg-[#d4d4d4] p-1.5">
+      <form action={action} className="flex min-w-0 flex-1 flex-wrap items-center gap-2 rounded bg-[#d4d4d4] p-1.5">
         {Object.entries(hidden ?? {}).map(([k, v]) => (v ? <input key={k} type="hidden" name={k} value={v} /> : null))}
         {filters}
         <div className="relative min-w-40 flex-1">

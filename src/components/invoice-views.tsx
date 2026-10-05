@@ -141,21 +141,30 @@ export async function InvoiceListPage({ searchParams }: { searchParams: Promise<
   );
 }
 
-export async function InvoiceDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SP> }) {
-  const user = await requireUser("sales.read");
+/** Satış / alış faturası için yol, etiket ve yetkiler */
+export const DIR = {
+  SALE: { base: "/satislar", list: "Satış Faturaları", single: "Satış Faturası", read: "sales.read", write: "sales.write", contactBase: "/musteriler", contactParam: "musteri" },
+  PURCHASE: { base: "/giderler", list: "Gider Listesi", single: "Alış Faturası", read: "expenses.read", write: "expenses.write", contactBase: "/tedarikciler", contactParam: "tedarikci" },
+} as const;
+
+export async function InvoiceDetailPage({ params, searchParams, direction = "SALE" }: { params: Promise<{ id: string }>; searchParams: Promise<SP>; direction?: "SALE" | "PURCHASE" }) {
+  const M = DIR[direction];
+  const BASE = M.base;
+  const user = await requireUser(M.read);
   const inv = await orNotFound(getInvoice(user, (await params).id));
-  if (inv.direction !== "SALE") notFound();
+  if (inv.direction !== direction) notFound();
   const sp = await searchParams;
-  const canWrite = can(user.role, "sales.write") && can(user.role, "cash.write");
+  const canWrite = can(user.role, M.write) && can(user.role, "cash.write");
   const canSend = can(user.role, "einvoice.send");
   const accounts = canWrite ? await db.account.findMany({ where: { isArchived: false }, select: { id: true, name: true, currency: true }, orderBy: { name: "asc" } }) : [];
-  const title = inv.name || (inv.kind === "RETURN" ? "İade Faturası" : "Satış Faturası");
+  const title = inv.name || (inv.kind === "RETURN" ? "İade Faturası" : M.single);
   const c = inv.contact;
-  const isReturn = inv.kind === "RETURN";
+  // Para girişi mi (tahsilat) çıkışı mı (ödeme)
+  const moneyIn = (direction === "PURCHASE") === (inv.kind === "RETURN");
 
   return (
     <>
-      <PageHeader title={title} parent={{ href: BASE, label: "Satış Faturaları" }} />
+      <PageHeader title={title} parent={{ href: BASE, label: M.list }} />
       {strParam(sp.uyari) === "tahsilat" && <Alert tone="warning" className="mb-4">Fatura kaydedildi ama tahsilat eklenemedi (hesap dövizi farklı olabilir). Tahsilatı sağdaki panelden ekleyin.</Alert>}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Card>
@@ -163,7 +172,7 @@ export async function InvoiceDetailPage({ params, searchParams }: { params: Prom
             <h2 className="flex items-center gap-3 text-lg text-text"><FileText className="size-7 text-accent" /> {title}</h2>
             <div className="flex items-center gap-2">
               {canWrite && !inv.locked && <LinkButton href={`${BASE}/${inv.id}/duzenle`} variant="secondary">Düzenle</LinkButton>}
-              {inv.eDocStatus === "NONE" || inv.eDocStatus === "FAILED" ? (
+              {direction === "PURCHASE" ? null : inv.eDocStatus === "NONE" || inv.eDocStatus === "FAILED" ? (
                 <LinkButton href={`${BASE}/${inv.id}/yazdir`} variant="secondary" target="_blank"><Printer className="size-3.5" /> Yazdır</LinkButton>
               ) : (
                 // Gönderilmiş e-belgenin resmi görüntüsü NES'ten (kendi şablonumuz değil)
@@ -181,7 +190,7 @@ export async function InvoiceDetailPage({ params, searchParams }: { params: Prom
             <div className="flex gap-3">
               <User className="mt-0.5 size-4 shrink-0 text-text-3" />
               <div>
-                <Link href={`/musteriler/${c.id}`} className="font-medium uppercase text-text hover:text-accent">{c.title}</Link>
+                <Link href={`${M.contactBase}/${c.id}`} className="font-medium uppercase text-text hover:text-accent">{c.title}</Link>
                 <p className="text-xs text-text-2">{[c.address, [c.district, c.city].filter(Boolean).join(" / ")].filter(Boolean).join(" ")}</p>
                 {c.taxNumber && <p className="text-xs text-text-2">{c.taxOffice ? `${c.taxOffice} V.D. · ` : ""}{c.taxNumber.length === 11 ? "TCKN" : "VKN"} {c.taxNumber}</p>}
               </div>
@@ -242,7 +251,7 @@ export async function InvoiceDetailPage({ params, searchParams }: { params: Prom
 
         <aside className="flex flex-col gap-4">
           <Card>
-            <div className="flex flex-col gap-2 border-b border-border px-4 py-3 text-sm">
+            {direction === "SALE" && <div className="flex flex-col gap-2 border-b border-border px-4 py-3 text-sm">
               <p className="text-[11px] font-semibold uppercase text-text-2">e-Belge durumu</p>
               <DocStatusBadge status={inv.eDocStatus} profile={inv.eDocProfile} />
               {inv.eDocSentAt && <p className="text-xs text-text-3">Gönderim: {inv.eDocSentAt.toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" })}{inv.eDocCheckedAt ? ` · son sorgu ${inv.eDocCheckedAt.toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" })}` : ""}</p>}
@@ -250,7 +259,7 @@ export async function InvoiceDetailPage({ params, searchParams }: { params: Prom
               {inv.eDocError && <Alert tone={inv.eDocStatus === "REJECTED" || inv.eDocStatus === "FAILED" ? "danger" : "warning"} className="text-xs">{inv.eDocError}</Alert>}
               {(inv.eDocStatus === "REJECTED" || inv.eDocStatus === "CANCELLED") && <p className="text-xs text-text-3">Bu faturanın hukuki etkisi yok: bakiyeye ve stoğa yansımaz. Silebilir, gerekirse yeni fatura kesebilirsiniz.</p>}
               <EDocPanel invoiceId={inv.id} status={inv.eDocStatus} profile={inv.eDocProfile} canSend={canSend} hasError={inv.eDocStatus === "FAILED"} />
-            </div>
+            </div>}
             <div className="flex items-center justify-between px-4 py-4">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-text-2">Kalan</span>
               <Money value={inv.remaining} currency={inv.currency} className={cn("text-xl", inv.overdue ? "text-danger" : "")} />
@@ -258,15 +267,15 @@ export async function InvoiceDetailPage({ params, searchParams }: { params: Prom
             {inv.overdue && <p className="flex items-center gap-1.5 px-4 pb-3 text-xs text-danger"><AlertTriangle className="size-3.5" /> Vadesi geçti</p>}
             {canWrite && inv.remaining.greaterThan(0) && !isVoidEDoc(inv.eDocStatus) && (
               <div className="border-t border-border px-4 py-4">
-                <p className="mb-2 text-[11px] font-semibold uppercase text-text-2">{isReturn ? "Ödeme ekle" : "Tahsilat ekle"}</p>
-                <SettlementForm invoiceId={inv.id} accounts={accounts} docCurrency={inv.currency} defaultAmount={inv.remaining.toString()} label={isReturn ? "Ödeme ekle" : "Tahsilat ekle"} />
+                <p className="mb-2 text-[11px] font-semibold uppercase text-text-2">{moneyIn ? "Tahsilat ekle" : "Ödeme ekle"}</p>
+                <SettlementForm invoiceId={inv.id} accounts={accounts} docCurrency={inv.currency} defaultAmount={inv.remaining.toString()} label={moneyIn ? "Tahsilat ekle" : "Ödeme ekle"} />
               </div>
             )}
           </Card>
           <Card>
-            <CardHeader title={isReturn ? "Ödemeler" : "Tahsilatlar"} />
+            <CardHeader title={moneyIn ? "Tahsilatlar" : "Ödemeler"} />
             {inv.transactions.length === 0 ? (
-              <p className="px-4 py-4 text-sm text-text-3">Henüz {isReturn ? "ödeme" : "tahsilat"} yok.</p>
+              <p className="px-4 py-4 text-sm text-text-3">Henüz {moneyIn ? "tahsilat" : "ödeme"} yok.</p>
             ) : (
               <ul className="divide-y divide-border">
                 {inv.transactions.map((t) => (
@@ -282,7 +291,7 @@ export async function InvoiceDetailPage({ params, searchParams }: { params: Prom
               </ul>
             )}
           </Card>
-          {can(user.role, "sales.write") && inv.deletable && <ConfirmDelete action={deleteInvoiceAction} id={inv.id} label="Faturayı sil" confirmText="Fatura kalıcı olarak silinsin mi?" />}
+          {can(user.role, M.write) && inv.deletable && <ConfirmDelete action={deleteInvoiceAction} id={inv.id} label="Faturayı sil" confirmText="Fatura kalıcı olarak silinsin mi?" />}
         </aside>
       </div>
     </>
@@ -303,15 +312,17 @@ export async function documentFormData(direction: "SALE" | "PURCHASE") {
   return { contacts: formContacts, products: formProducts, categories, tags, accounts };
 }
 
-export async function InvoiceFormPage({ params, searchParams }: { params?: Promise<{ id: string }>; searchParams?: Promise<SP> }) {
-  const user = await requireUser("sales.write");
+export async function InvoiceFormPage({ params, searchParams, direction = "SALE" }: { params?: Promise<{ id: string }>; searchParams?: Promise<SP>; direction?: "SALE" | "PURCHASE" }) {
+  const M = DIR[direction];
+  const BASE = M.base;
+  const user = await requireUser(M.write);
   const id = params ? (await params).id : null;
-  const data = await documentFormData("SALE");
+  const data = await documentFormData(direction);
   const todayIso = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Istanbul" });
   let values: DocumentFormValues;
   if (id) {
     const inv = await orNotFound(getInvoice(user, id));
-    if (inv.direction !== "SALE") notFound();
+    if (inv.direction !== direction) notFound();
     if (inv.locked) notFound();
     // Arşivlenmiş müşteri seçili kalabilsin
     if (!data.contacts.some((c) => c.id === inv.contactId)) data.contacts.unshift({ id: inv.contact.id, title: inv.contact.title, currency: inv.contact.currency, taxNumber: inv.contact.taxNumber, address: inv.contact.address, district: inv.contact.district, city: inv.contact.city });
@@ -328,7 +339,7 @@ export async function InvoiceFormPage({ params, searchParams }: { params?: Promi
     };
   } else {
     const sp = searchParams ? await searchParams : {};
-    const preContact = strParam(sp.musteri);
+    const preContact = strParam(sp[M.contactParam]);
     const pc = data.contacts.find((c) => c.id === preContact);
     values = {
       kind: strParam(sp.tur) === "iade" ? "RETURN" : "INVOICE", name: null, docNo: null, contactId: pc?.id ?? "", issueDate: todayIso, dueDate: todayIso, currency: pc?.currency ?? "TRY", exchangeRate: null,
@@ -338,9 +349,9 @@ export async function InvoiceFormPage({ params, searchParams }: { params?: Promi
   const label = values.kind === "RETURN" ? "Yeni iade faturası" : "Yeni fatura";
   return (
     <>
-      <PageHeader title={id ? "Düzenle" : label} parent={{ href: id ? `${BASE}/${id}` : BASE, label: id ? values.name || "Satış Faturası" : "Satış Faturaları" }} />
+      <PageHeader title={id ? "Düzenle" : label} parent={{ href: id ? `${BASE}/${id}` : BASE, label: id ? values.name || M.single : M.list }} />
       <Card>
-        <DocumentForm mode="invoice" values={values} {...data} cancelHref={id ? `${BASE}/${id}` : BASE} />
+        <DocumentForm mode="invoice" direction={direction} values={values} {...data} cancelHref={id ? `${BASE}/${id}` : BASE} />
       </Card>
     </>
   );

@@ -11,7 +11,7 @@ type Account = { id: string; name: string; currency: string };
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Istanbul" });
 
 /** Faturaya veya cariye tahsilat / ödeme */
-export function SettlementForm({ invoiceId, contactId, accounts, docCurrency, defaultAmount, label }: { invoiceId?: string; contactId?: string; accounts: Account[]; docCurrency: string; defaultAmount?: string; label: string }) {
+export function SettlementForm({ invoiceId, contactId, expenseId, employeeId, accounts, docCurrency, defaultAmount, label }: { invoiceId?: string; contactId?: string; expenseId?: string; employeeId?: string; accounts: Account[]; docCurrency: string; defaultAmount?: string; label: string }) {
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const acc = accounts.find((a) => a.id === accountId);
   if (accounts.length === 0) return <p className="text-xs text-text-3">Önce Kasa ve Bankalar&apos;dan bir hesap ekleyin.</p>;
@@ -21,6 +21,8 @@ export function SettlementForm({ invoiceId, contactId, accounts, docCurrency, de
         <>
           {invoiceId && <input type="hidden" name="invoiceId" value={invoiceId} />}
           {contactId && <input type="hidden" name="contactId" value={contactId} />}
+          {expenseId && <input type="hidden" name="expenseId" value={expenseId} />}
+          {employeeId && <input type="hidden" name="employeeId" value={employeeId} />}
           <Select name="accountId" value={accountId} onChange={(e) => setAccountId(e.target.value)} aria-label="Hesap">
             {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
           </Select>

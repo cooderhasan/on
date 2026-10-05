@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { requireUser } from "@/server/auth/session";
-import { ComingSoon } from "@/components/coming-soon";
+import { ExpenseListPage } from "@/components/expense-views";
 
 export const metadata: Metadata = { title: "Gider Listesi" };
 
-export default async function Page() {
-  await requireUser();
-  return <ComingSoon title="Gider Listesi" phase={4} />;
+export default function Page(props: PageProps<"/giderler">) {
+  return <ExpenseListPage searchParams={props.searchParams} />;
 }

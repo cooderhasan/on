@@ -25,16 +25,19 @@ export function invoiceSign(direction: "SALE" | "PURCHASE", kind: "INVOICE" | "R
 export async function contactBalances(ids: string[]): Promise<Map<string, Decimal>> {
   const out = new Map<string, Decimal>(ids.map((id) => [id, new Decimal(0)]));
   if (ids.length === 0) return out;
-  const [contacts, invoices, txs] = await Promise.all([
+  const [contacts, invoices, txs, expenses] = await Promise.all([
     db.contact.findMany({ where: { id: { in: ids } }, select: { id: true, openingBalance: true, openingBalanceSide: true } }),
     // Reddedilen / iptal edilen e-belgelerin hukuki etkisi yok → bakiyeye girmez
     db.invoice.groupBy({ by: ["contactId", "direction", "kind"], where: { contactId: { in: ids }, eDocStatus: { notIn: [...VOID_EDOC] } }, _sum: { payableTotal: true } }),
     db.transaction.groupBy({ by: ["contactId", "type"], where: { contactId: { in: ids }, type: { in: ["COLLECTION", "PAYMENT"] } }, _sum: { appliedAmount: true } }),
+    // Tedarikçili hızlı fiş: biz borçluyuz
+    db.expense.groupBy({ by: ["contactId"], where: { contactId: { in: ids } }, _sum: { totalAmount: true } }),
   ]);
   const add = (id: string, v: Decimal) => out.set(id, (out.get(id) ?? new Decimal(0)).plus(v));
   for (const c of contacts) if (c.openingBalance) add(c.id, c.openingBalanceSide === "CREDIT" ? D(c.openingBalance).negated() : D(c.openingBalance));
   for (const i of invoices) add(i.contactId, D(i._sum.payableTotal).times(invoiceSign(i.direction, i.kind)));
   for (const t of txs) if (t.contactId) add(t.contactId, t.type === "COLLECTION" ? D(t._sum.appliedAmount).negated() : D(t._sum.appliedAmount));
+  for (const e of expenses) if (e.contactId) add(e.contactId, D(e._sum.totalAmount).negated());
   return out;
 }
 
@@ -44,7 +47,7 @@ export async function contactBalance(id: string): Promise<Decimal> {
 
 export interface StatementRow {
   date: Date;
-  kind: "OPENING" | "INVOICE" | "RETURN" | "COLLECTION" | "PAYMENT";
+  kind: "OPENING" | "INVOICE" | "RETURN" | "COLLECTION" | "PAYMENT" | "EXPENSE";
   label: string;
   href?: string;
   debit: Decimal;
@@ -54,10 +57,11 @@ export interface StatementRow {
 
 /** Cari ekstre: tarih sırasıyla hareketler ve yürüyen bakiye */
 export async function contactStatement(id: string): Promise<StatementRow[]> {
-  const [c, invoices, txs] = await Promise.all([
+  const [c, invoices, txs, expenses] = await Promise.all([
     db.contact.findUniqueOrThrow({ where: { id }, select: { openingBalance: true, openingBalanceSide: true, openingBalanceDate: true, createdAt: true, kind: true } }),
     db.invoice.findMany({ where: { contactId: id, eDocStatus: { notIn: [...VOID_EDOC] } }, select: { id: true, direction: true, kind: true, issueDate: true, name: true, invoiceNo: true, payableTotal: true, createdAt: true } }),
     db.transaction.findMany({ where: { contactId: id, type: { in: ["COLLECTION", "PAYMENT"] } }, select: { id: true, type: true, date: true, appliedAmount: true, description: true, invoiceId: true, createdAt: true, account: { select: { name: true } } } }),
+    db.expense.findMany({ where: { contactId: id }, select: { id: true, date: true, description: true, receiptNo: true, totalAmount: true, createdAt: true } }),
   ]);
   type Raw = Omit<StatementRow, "balance"> & { sortKey: Date };
   const rows: Raw[] = [];
@@ -90,6 +94,9 @@ export async function contactStatement(id: string): Promise<StatementRow[]> {
       debit: t.type === "PAYMENT" ? v : new Decimal(0),
       credit: t.type === "COLLECTION" ? v : new Decimal(0),
     });
+  }
+  for (const e of expenses) {
+    rows.push({ date: e.date, sortKey: e.createdAt, kind: "EXPENSE", label: ["Fiş / fatura", e.receiptNo, e.description].filter(Boolean).join(" · "), href: `/giderler/kayit/${e.id}`, debit: new Decimal(0), credit: D(e.totalAmount) });
   }
   rows.sort((a, b) => (a.kind === "OPENING" ? -1 : b.kind === "OPENING" ? 1 : a.date.getTime() - b.date.getTime() || a.sortKey.getTime() - b.sortKey.getTime()));
   let bal = new Decimal(0);
@@ -125,5 +132,21 @@ export async function accountBalances(ids: string[]): Promise<Map<string, Decima
     add(t.accountId, t.type === "COLLECTION" || t.type === "DEPOSIT" ? v : v.negated());
   }
   for (const t of incoming) if (t.targetAccountId) add(t.targetAccountId, D(t._sum.targetAmount));
+  return out;
+}
+
+/**
+ * Çalışan bakiyeleri (− = çalışana borçluyuz): maaş / prim tahakkuku −, ödeme +.
+ * Avans (tahakkuktan önce ödeme) bakiyeyi + yapar.
+ */
+export async function employeeBalances(ids: string[]): Promise<Map<string, Decimal>> {
+  const out = new Map<string, Decimal>(ids.map((id) => [id, new Decimal(0)]));
+  if (!ids.length) return out;
+  const [accrued, paid] = await Promise.all([
+    db.expense.groupBy({ by: ["employeeId"], where: { employeeId: { in: ids } }, _sum: { totalAmount: true } }),
+    db.transaction.groupBy({ by: ["employeeId"], where: { employeeId: { in: ids }, type: "PAYMENT" }, _sum: { appliedAmount: true } }),
+  ]);
+  for (const a of accrued) if (a.employeeId) out.set(a.employeeId, out.get(a.employeeId)!.minus(D(a._sum.totalAmount)));
+  for (const p of paid) if (p.employeeId) out.set(p.employeeId, out.get(p.employeeId)!.plus(D(p._sum.appliedAmount)));
   return out;
 }

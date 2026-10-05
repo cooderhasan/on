@@ -212,6 +212,7 @@ export async function ContactDetailPage({ kind, params }: { kind: ContactKind; p
             </Card>
           )}
           {kind === "CUSTOMER" && can(user.role, "sales.write") && <LinkButton href={`/satislar/yeni?musteri=${c.id}`} variant="secondary">Fatura oluştur</LinkButton>}
+          {kind === "SUPPLIER" && can(user.role, "expenses.write") && <LinkButton href={`/giderler/yeni?tedarikci=${c.id}`} variant="secondary">Fatura oluştur</LinkButton>}
           {canEdit && (
             <form action={archiveContactAction}>
               <input type="hidden" name="id" value={c.id} />
@@ -261,7 +262,7 @@ export async function ContactFormPage({ kind, params }: { kind: ContactKind; par
   );
 }
 
-const ROW_LABEL: Record<StatementRow["kind"], string> = { OPENING: "Açılış", INVOICE: "Fatura", RETURN: "İade", COLLECTION: "Tahsilat", PAYMENT: "Ödeme" };
+const ROW_LABEL: Record<StatementRow["kind"], string> = { OPENING: "Açılış", INVOICE: "Fatura", RETURN: "İade", COLLECTION: "Tahsilat", PAYMENT: "Ödeme", EXPENSE: "Fiş" };
 
 /** Cari ekstre: borç / alacak / yürüyen bakiye (en yeni üstte) */
 function StatementCard({ rows, currency }: { rows: StatementRow[]; currency: string }) {

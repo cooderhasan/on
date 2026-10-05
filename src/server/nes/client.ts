@@ -129,6 +129,30 @@ export class NesClient {
     await this.json(`earchive/v1/invoices/cancel`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uuids }) });
   }
 
+  /** Gelen e-faturalar (sayfalı, en yeni önce) */
+  async incomingInvoices(page: number, pageSize: number, startDate?: string): Promise<NesIncomingPage> {
+    const q = new URLSearchParams({ sort: "CreatedAt desc", page: String(page), pageSize: String(pageSize) });
+    if (startDate) q.set("startDate", startDate);
+    return this.json<NesIncomingPage>(`einvoice/v1/incoming/invoices?${q.toString()}`);
+  }
+
+  /** Gelen faturanın UBL XML'i */
+  async incomingXml(uuid: string): Promise<string> {
+    const res = await this.call(`einvoice/v1/incoming/invoices/${uuid}/xml`, { headers: { Accept: "application/xml" } }, 60_000);
+    const text = await res.text();
+    if (!res.ok) throw new NesError(res.status, nesErrorMessage(res.status, text));
+    return text;
+  }
+
+  /** Ticari faturaya kabul / red yanıtı */
+  async answerIncoming(uuid: string, answer: "KABUL" | "RED", note: string | null) {
+    return this.json<{ documentAnswer?: string }>(`einvoice/v1/incoming/invoices/${uuid}/documentAnswer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ incomingInvoiceAnswerParameter: answer, answerNote: note ?? "" }),
+    });
+  }
+
   /** PDF / HTML görüntü (ham yanıt; çağıran akıtır) */
   async document(service: NesService, uuid: string, format: "pdf" | "html", direction: "outgoing" | "incoming" = "outgoing"): Promise<Response> {
     const path = service === "earchive" ? `earchive/v1/invoices/${uuid}/${format}` : `einvoice/v1/${direction}/invoices/${uuid}/${format}`;
@@ -161,6 +185,25 @@ export interface NesOutgoingDetail {
   profileId?: string;
   outgoingEnvelope?: { description?: string | null; code?: string | null } | null;
   incomingAnswer?: { documentAnswer?: string; answerNote?: string | null; errorDescription?: string | null } | null;
+}
+
+export interface NesIncomingPage {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  data: Array<{
+    id: string;
+    createdAt: string;
+    issueDate: string;
+    documentNumber?: string | null;
+    profileId?: string;
+    invoiceTypeCode?: string;
+    payableAmount?: number;
+    documentCurrencyCode?: string;
+    documentAnswer?: string;
+    accountingSupplierParty?: { partyIdentification?: string; partyName?: string | null; firstName?: string | null; familyName?: string | null };
+    taxes?: Array<{ taxTypeCode?: string; taxableAmount?: number; taxAmount?: number }>;
+  }>;
 }
 
 export interface NesArchiveDetail {

@@ -112,9 +112,11 @@ model Category {
   color     String       @default("#9e9e9e")
   createdAt DateTime     @default(now())
 
-  contacts Contact[]
-  products Product[]
-  invoices Invoice[]
+  contacts  Contact[]
+  products  Product[]
+  invoices  Invoice[]
+  expenses  Expense[]
+  employees Employee[]
 
   @@unique([type, name])
 }
@@ -191,6 +193,7 @@ model Contact {
   invoices     Invoice[]
   quotes       Quote[]
   transactions Transaction[]
+  expenses     Expense[]
 
   @@index([kind, isArchived])
   @@index([taxNumber])
@@ -376,6 +379,7 @@ model Invoice {
   transactions Transaction[]
   quote        Quote?          @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   stockMoves   StockMovement[]
+  incoming     IncomingInvoice?
 
   @@index([direction, issueDate])
   @@index([contactId])
@@ -503,6 +507,10 @@ model Transaction {
   targetAccountId String?
   contactId       String?
   invoiceId       String?
+  /// Fatura dışı gider (hızlı fiş, maaş, vergi, banka gideri) ödemesi
+  expenseId       String?
+  /// Çalışana yapılan ödeme (maaş / avans)
+  employeeId      String?
   /// Hesap para biriminde tutar (her zaman pozitif; yön türden gelir)
   amount          Decimal         @db.Decimal(18, 2)
   /// Faturaya / cariye yansıyan tutar (fatura para biriminde; aynı dövizde amount ile eşit)
@@ -517,8 +525,12 @@ model Transaction {
   targetAccount Account? @relation("TxTargetAccount", fields: [targetAccountId], references: [id], onDelete: Restrict)
   contact       Contact? @relation(fields: [contactId], references: [id], onDelete: Restrict)
   invoice       Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  expense       Expense? @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  employee      Employee? @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@index([accountId, date])
+  @@index([expenseId])
+  @@index([employeeId])
   @@index([contactId, date])
   @@index([invoiceId])
 }
@@ -564,4 +576,102 @@ model EInvoiceSettings {
   /// e-Fatura mükellefine varsayılan senaryo
   defaultProfile String   @default("TICARIFATURA")
   updatedAt      DateTime @updatedAt
+}
+// ── Giderler (fatura dışı) ─────────────────────────────────
+
+/// Paraşüt: hızlı fiş/fatura, maaş / prim, vergi / SGK primi, banka gideri
+enum ExpenseKind {
+  RECEIPT
+  SALARY
+  TAX
+  BANK_FEE
+}
+
+model Expense {
+  id          String      @id @default(cuid())
+  kind        ExpenseKind
+  description String
+  date        DateTime    @db.Date
+  dueDate     DateTime    @db.Date
+  categoryId  String?
+  /// Hızlı fiş: tedarikçi (isteğe bağlı)
+  contactId   String?
+  /// Maaş / prim: çalışan
+  employeeId  String?
+  currency    String      @default("TRY")
+  /// KDV hariç tutar, KDV oranı ve tutarı (hızlı fişte); diğer türlerde KDV 0
+  netAmount   Decimal     @db.Decimal(18, 2)
+  vatRate     Int         @default(0)
+  vatAmount   Decimal     @default(0) @db.Decimal(18, 2)
+  totalAmount Decimal     @db.Decimal(18, 2)
+  receiptNo   String?
+  createdById String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  category     Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  employee     Employee?     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  transactions Transaction[]
+
+  @@index([date])
+  @@index([kind])
+}
+
+model Employee {
+  id          String    @id @default(cuid())
+  name        String
+  tckn        String?
+  email       String?
+  phone       String?
+  iban        String?
+  categoryId  String?
+  startDate   DateTime? @db.Date
+  notes       String?
+  isArchived  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  category     Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  expenses     Expense[]
+  transactions Transaction[]
+
+  @@index([isArchived])
+}
+
+// ── Gelen e-Faturalar (NES) ────────────────────────────────
+
+enum IncomingStatus {
+  /// Henüz işlenmedi
+  NEW
+  /// Alış faturası olarak kaydedildi
+  PROCESSED
+  /// Kullanıcı yok saydı (ör. iade edildi, mükerrer)
+  IGNORED
+}
+
+model IncomingInvoice {
+  id                String         @id @default(cuid())
+  uuid              String         @unique
+  documentNumber    String?
+  issueDate         DateTime       @db.Date
+  senderTaxNumber   String?
+  senderTitle       String
+  profile           String?
+  typeCode          String?
+  currency          String         @default("TRY")
+  taxExclusive      Decimal        @default(0) @db.Decimal(18, 2)
+  taxTotal          Decimal        @default(0) @db.Decimal(18, 2)
+  payableAmount     Decimal        @db.Decimal(18, 2)
+  /// Ticari faturada bizim yanıtımız: None / Waiting / Accepted / Rejected
+  answer            String?
+  receivedAt        DateTime
+  status            IncomingStatus @default(NEW)
+  purchaseInvoiceId String?        @unique
+  syncedAt          DateTime       @default(now())
+
+  purchaseInvoice Invoice? @relation(fields: [purchaseInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([issueDate])
+  @@index([status])
 }

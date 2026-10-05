@@ -124,8 +124,9 @@ export async function AccountDetailPage({ params }: { params: Promise<{ id: stri
                       <Td className="whitespace-nowrap text-text-2">{m.date.toLocaleDateString("tr-TR", { timeZone: "UTC" })}</Td>
                       <Td>
                         <span className="mr-2 rounded-sm bg-card-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-text-2">{MOVE_LABEL[m.type]}</span>
-                        {m.type === "TRANSFER" ? (m.incoming ? `${m.account.name} hesabından` : `${m.targetAccount?.name} hesabına`) : m.contact ? <Link href={`${m.contact.kind === "CUSTOMER" ? "/musteriler" : "/tedarikciler"}/${m.contact.id}`} className="hover:text-accent">{m.contact.title}</Link> : null}
+                        {m.type === "TRANSFER" ? (m.incoming ? `${m.account.name} hesabından` : `${m.targetAccount?.name} hesabına`) : m.contact ? <Link href={`${m.contact.kind === "CUSTOMER" ? "/musteriler" : "/tedarikciler"}/${m.contact.id}`} className="hover:text-accent">{m.contact.title}</Link> : m.employee ? <Link href={`/calisanlar/${m.employee.id}`} className="hover:text-accent">{m.employee.name}</Link> : null}
                         {m.invoice && <> · <Link href={`${m.invoice.direction === "SALE" ? "/satislar" : "/giderler"}/${m.invoice.id}`} className="text-accent hover:underline">{m.invoice.name || m.invoice.invoiceNo || "Fatura"}</Link></>}
+                        {m.expense && <> · <Link href={`/giderler/kayit/${m.expense.id}`} className="text-accent hover:underline">{m.expense.description}</Link></>}
                         {m.description && <span className="block text-xs text-text-3">{m.description}</span>}
                       </Td>
                       <Td className="text-right">{m.incoming ? <Money value={m.value} currency={a.currency} className="text-success" /> : ""}</Td>

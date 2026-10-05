@@ -6,6 +6,7 @@ import { audit } from "@/server/audit";
 import { assertCan } from "@/server/auth/permissions";
 import type { CurrentUser } from "@/server/auth/session";
 import { AppError } from "@/lib/errors";
+import { formatMoney } from "@/lib/money";
 import { optDecimal, optText } from "@/lib/validation";
 import { invoiceSign } from "./ledger";
 
@@ -16,7 +17,11 @@ const amount = (label: string) => optDecimal({ min: 0, label }).refine((v) => v 
 /** Fatura / cari tahsilatı veya ödemesi */
 export const settlementSchema = z.object({
   invoiceId: optText(50),
+  /** Fatura dışı gider (hızlı fiş, maaş, vergi, banka gideri) */
+  expenseId: optText(50),
   contactId: optText(50),
+  /** Çalışana doğrudan ödeme (avans / maaş) */
+  employeeId: optText(50),
   accountId: z.string().min(1, "Kasa / banka hesabı seçin."),
   date,
   amount: amount("Tutar"),
@@ -53,6 +58,7 @@ export async function createSettlement(user: CurrentUser, input: z.infer<typeof 
   if (!account || account.isArchived) throw new AppError("VALIDATION", "Hesap bulunamadı.", { accountId: "Seçin" });
 
   let contactId = input.contactId;
+  let employeeId = input.employeeId;
   let docCurrency: string;
   let type: "COLLECTION" | "PAYMENT";
   let remaining: Decimal | null = null;
@@ -69,6 +75,24 @@ export async function createSettlement(user: CurrentUser, input: z.infer<typeof 
     docCurrency = inv.currency;
     type = invoiceSign(inv.direction, inv.kind) > 0 ? "COLLECTION" : "PAYMENT";
     remaining = D(inv.payableTotal).minus(inv.transactions.reduce((a, t) => a.plus(D(t.appliedAmount)), new Decimal(0)));
+  } else if (input.expenseId) {
+    const e = await db.expense.findUnique({ where: { id: input.expenseId }, select: { contactId: true, employeeId: true, currency: true, totalAmount: true, transactions: { select: { appliedAmount: true } } } });
+    if (!e) throw new AppError("NOT_FOUND", "Gider bulunamadı.");
+    assertCan(user, "expenses.write");
+    assertCan(user, "cash.write");
+    contactId = e.contactId;
+    employeeId = e.employeeId;
+    docCurrency = e.currency;
+    type = "PAYMENT";
+    remaining = D(e.totalAmount).minus(e.transactions.reduce((a, t) => a.plus(D(t.appliedAmount)), new Decimal(0)));
+  } else if (input.employeeId) {
+    const emp = await db.employee.findUnique({ where: { id: input.employeeId }, select: { id: true } });
+    if (!emp) throw new AppError("NOT_FOUND", "Çalışan bulunamadı.");
+    assertCan(user, "expenses.write");
+    assertCan(user, "cash.write");
+    contactId = null;
+    docCurrency = "TRY";
+    type = "PAYMENT";
   } else {
     if (!contactId) throw new AppError("VALIDATION", "Cari seçin.");
     const c = await db.contact.findUnique({ where: { id: contactId }, select: { kind: true, currency: true } });
@@ -87,7 +111,7 @@ export async function createSettlement(user: CurrentUser, input: z.infer<typeof 
     applied = new Decimal(input.appliedAmount);
   }
   if (remaining !== null && applied.greaterThan(remaining)) {
-    throw new AppError("VALIDATION", `Faturanın kalan tutarı ${remaining.toFixed(2)} ${docCurrency}. Daha fazlası girilemez.`, { amount: "Kalanı aşıyor" });
+    throw new AppError("VALIDATION", `Kalan tutar ${formatMoney(remaining, docCurrency)}. Daha fazlası girilemez.`, { amount: "Kalanı aşıyor" });
   }
 
   const tx = await db.transaction.create({
@@ -97,6 +121,8 @@ export async function createSettlement(user: CurrentUser, input: z.infer<typeof 
       accountId: account.id,
       contactId,
       invoiceId: input.invoiceId,
+      expenseId: input.invoiceId ? null : input.expenseId,
+      employeeId,
       amount: amt.toString(),
       appliedAmount: applied.toString(),
       description: input.description,
@@ -160,6 +186,8 @@ export async function accountMovements(user: CurrentUser, accountId: string) {
     include: {
       contact: { select: { id: true, title: true, kind: true } },
       invoice: { select: { id: true, name: true, invoiceNo: true, direction: true } },
+      expense: { select: { id: true, description: true } },
+      employee: { select: { id: true, name: true } },
       account: { select: { name: true } },
       targetAccount: { select: { name: true } },
     },

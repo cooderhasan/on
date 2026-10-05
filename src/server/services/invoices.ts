@@ -256,6 +256,8 @@ export async function deleteInvoice(user: CurrentUser, id: string) {
   if (inv._count.transactions > 0) throw new AppError("CONFLICT", "Bu faturaya bağlı tahsilat / ödeme var. Önce onları silin.");
   await db.$transaction(async (tx) => {
     await revertStock(tx, id);
+    // Gelen e-faturadan oluşturulduysa, gelen fatura yeniden işlenebilir hale gelir
+    await tx.incomingInvoice.updateMany({ where: { purchaseInvoiceId: id }, data: { status: "NEW", purchaseInvoiceId: null } });
     await tx.invoice.delete({ where: { id } });
   });
   await audit({ userId: user.id, action: "invoice.deleted", entityType: "Invoice", entityId: id });
