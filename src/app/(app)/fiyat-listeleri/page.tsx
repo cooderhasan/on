@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { requireUser } from "@/server/auth/session";
-import { ComingSoon } from "@/components/coming-soon";
+import { PriceListListPage } from "@/components/stock-views";
 
 export const metadata: Metadata = { title: "Fiyat Listeleri" };
 
-export default async function Page() {
-  await requireUser();
-  return <ComingSoon title="Fiyat Listeleri" phase={5} />;
+export default function Page(props: PageProps<"/fiyat-listeleri">) {
+  return <PriceListListPage searchParams={props.searchParams} />;
 }

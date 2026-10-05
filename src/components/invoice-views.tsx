@@ -5,6 +5,9 @@ import { requireUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
 import { db } from "@/server/db";
 import { getInvoice, listInvoices, type PaymentFilter } from "@/server/services/invoices";
+import { activeWarehouses } from "@/server/services/stock";
+import { priceListsForForm } from "@/server/services/price-lists";
+import { getWaybill } from "@/server/services/waybills";
 import { listCategories, listTags } from "@/server/services/categories";
 import { orNotFound, pageParam, strParam } from "@/server/page-helpers";
 import { deleteInvoiceAction } from "@/app/actions/sales";
@@ -166,7 +169,7 @@ export async function InvoiceDetailPage({ params, searchParams, direction = "SAL
     <>
       <PageHeader title={title} parent={{ href: BASE, label: M.list }} />
       {strParam(sp.uyari) === "tahsilat" && <Alert tone="warning" className="mb-4">Fatura kaydedildi ama tahsilat eklenemedi (hesap dövizi farklı olabilir). Tahsilatı sağdaki panelden ekleyin.</Alert>}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
             <h2 className="flex items-center gap-3 text-lg text-text"><FileText className="size-7 text-accent" /> {title}</h2>
@@ -200,6 +203,10 @@ export async function InvoiceDetailPage({ params, searchParams, direction = "SAL
               <p className="text-xs">Vade: {fmtDate(inv.dueDate)}</p>
               {inv.currency !== "TRY" && <p className="text-xs">Kur: 1 {inv.currency} = {inv.exchangeRate.toString()} TL</p>}
               {inv.quote && <p className="text-xs"><Link href={`/teklifler/${inv.quote.id}`} className="text-accent hover:underline">Tekliften oluşturuldu</Link></p>}
+              {inv.waybills.map((w) => (
+                <p key={w.id} className="text-xs"><Link href={`${direction === "SALE" ? "/giden-irsaliyeler" : "/gelen-irsaliyeler"}/${w.id}`} className="text-accent hover:underline">İrsaliye {w.waybillNo ?? fmtDate(w.dispatchDate)}</Link></p>
+              ))}
+              {inv.stockMode === "WITH_INVOICE" && inv.warehouse && <p className="text-xs">Depo: {inv.warehouse.name}</p>}
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -269,6 +276,9 @@ export async function InvoiceDetailPage({ params, searchParams, direction = "SAL
               <div className="border-t border-border px-4 py-4">
                 <p className="mb-2 text-[11px] font-semibold uppercase text-text-2">{moneyIn ? "Tahsilat ekle" : "Ödeme ekle"}</p>
                 <SettlementForm invoiceId={inv.id} accounts={accounts} docCurrency={inv.currency} defaultAmount={inv.remaining.toString()} label={moneyIn ? "Tahsilat ekle" : "Ödeme ekle"} />
+                {inv.kind === "INVOICE" && can(user.role, "cash.write") && (
+                  <Link href={`/cekler/yeni?fatura=${inv.id}`} className="mt-2 inline-block text-xs text-accent hover:underline">{moneyIn ? "Çek ile tahsil et" : "Çek ile öde"}</Link>
+                )}
               </div>
             )}
           </Card>
@@ -282,10 +292,13 @@ export async function InvoiceDetailPage({ params, searchParams, direction = "SAL
                   <li key={t.id} className="flex items-start justify-between gap-2 px-4 py-2.5 text-sm">
                     <div>
                       <p><Money value={t.appliedAmount.toString()} currency={inv.currency} /></p>
-                      <p className="text-xs text-text-3">{fmtDate(t.date)} · <Link href={`/kasa-ve-bankalar/${t.account.id}`} className="hover:underline">{t.account.name}</Link></p>
+                      <p className="text-xs text-text-3">
+                        {fmtDate(t.date)} ·{" "}
+                        {t.account ? <Link href={`/kasa-ve-bankalar/${t.account.id}`} className="hover:underline">{t.account.name}</Link> : t.cheque ? <Link href={`/cekler/${t.cheque.id}`} className="hover:underline">Çek {t.cheque.chequeNo}</Link> : null}
+                      </p>
                       {t.description && <p className="text-xs text-text-3">{t.description}</p>}
                     </div>
-                    {canWrite && <DeleteTransactionButton id={t.id} />}
+                    {canWrite && !t.chequeId && <DeleteTransactionButton id={t.id} />}
                   </li>
                 ))}
               </ul>
@@ -300,16 +313,18 @@ export async function InvoiceDetailPage({ params, searchParams, direction = "SAL
 
 /** Form için seçenek listeleri */
 export async function documentFormData(direction: "SALE" | "PURCHASE") {
-  const [contacts, products, categories, tags, accounts] = await Promise.all([
-    db.contact.findMany({ where: { kind: direction === "SALE" ? "CUSTOMER" : "SUPPLIER", isArchived: false }, orderBy: { title: "asc" }, select: { id: true, title: true, currency: true, taxNumber: true, address: true, district: true, city: true } }),
+  const [contacts, products, categories, tags, accounts, warehouses, priceLists] = await Promise.all([
+    db.contact.findMany({ where: { kind: direction === "SALE" ? "CUSTOMER" : "SUPPLIER", isArchived: false }, orderBy: { title: "asc" }, select: { id: true, title: true, currency: true, taxNumber: true, address: true, district: true, city: true, priceListId: true } }),
     db.product.findMany({ where: { isArchived: false }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, sellPrice: true, buyPrice: true, vatRate: true } }),
     listCategories(direction === "SALE" ? "SALES" : "EXPENSE"),
     listTags(),
     db.account.findMany({ where: { isArchived: false }, orderBy: { name: "asc" }, select: { id: true, name: true, currency: true } }),
+    activeWarehouses(),
+    direction === "SALE" ? priceListsForForm() : Promise.resolve([]),
   ]);
   const formProducts: FormProduct[] = products.map((p) => ({ id: p.id, name: p.name, code: p.code, unit: p.unit, vatRate: p.vatRate, sellPrice: (direction === "SALE" ? p.sellPrice : p.buyPrice)?.toString() ?? null }));
   const formContacts: FormContact[] = contacts;
-  return { contacts: formContacts, products: formProducts, categories, tags, accounts };
+  return { contacts: formContacts, products: formProducts, categories, tags, accounts, warehouses, priceLists };
 }
 
 export async function InvoiceFormPage({ params, searchParams, direction = "SALE" }: { params?: Promise<{ id: string }>; searchParams?: Promise<SP>; direction?: "SALE" | "PURCHASE" }) {
@@ -330,7 +345,7 @@ export async function InvoiceFormPage({ params, searchParams, direction = "SALE"
       id: inv.id, kind: inv.kind, name: inv.name, docNo: inv.invoiceNo, contactId: inv.contactId, issueDate: inv.issueDate.toISOString().slice(0, 10), dueDate: inv.dueDate.toISOString().slice(0, 10),
       currency: inv.currency, exchangeRate: inv.exchangeRate.toString(), categoryId: inv.categoryId, notes: inv.notes, orderNo: inv.orderNo, orderDate: inv.orderDate?.toISOString().slice(0, 10) ?? null,
       returnRefNo: inv.returnRefNo, returnRefDate: inv.returnRefDate?.toISOString().slice(0, 10) ?? null,
-      stockMode: inv.stockMode, discountType: inv.discountType, discountValue: inv.discountValue?.toString() ?? null, tagIds: inv.tags.map((t) => t.tagId),
+      stockMode: inv.stockMode, warehouseId: inv.warehouseId, discountType: inv.discountType, discountValue: inv.discountValue?.toString() ?? null, tagIds: inv.tags.map((t) => t.tagId),
       lines: inv.lines.map((l) => ({
         productId: l.productId ?? "", name: l.name, description: l.description, quantity: l.quantity.toString().replace(".", ","), unit: l.unit, unitPrice: l.unitPrice.toString().replace(".", ","),
         discountType: l.discountType ?? "", discountValue: l.discountValue?.toString().replace(".", ",") ?? "", vatRate: l.vatRate, vatExemptionCode: l.vatExemptionCode ?? "", otvRate: l.otvRate?.toString().replace(".", ",") ?? "", otvCode: l.otvCode ?? "0074",
@@ -345,6 +360,26 @@ export async function InvoiceFormPage({ params, searchParams, direction = "SALE"
       kind: strParam(sp.tur) === "iade" ? "RETURN" : "INVOICE", name: null, docNo: null, contactId: pc?.id ?? "", issueDate: todayIso, dueDate: todayIso, currency: pc?.currency ?? "TRY", exchangeRate: null,
       categoryId: null, notes: null, orderNo: null, orderDate: null, stockMode: "WITH_INVOICE", discountType: null, discountValue: null, tagIds: [], lines: [],
     };
+    // İrsaliyeden fatura: cari ve satırlar irsaliyeden, fiyatlar ürün kartı / fiyat listesinden
+    const waybillId = strParam(sp.irsaliye);
+    if (waybillId) {
+      const w = await orNotFound(getWaybill(user, waybillId));
+      if (w.direction !== direction || w.invoiceId) notFound();
+      const wc = data.contacts.find((c) => c.id === w.contactId);
+      const list = wc?.priceListId ? data.priceLists.find((l) => l.id === wc.priceListId && l.currency === w.contact.currency) : undefined;
+      const prods = await db.product.findMany({ where: { id: { in: w.lines.map((l) => l.productId).filter((x): x is string => Boolean(x)) } }, select: { id: true, sellPrice: true, buyPrice: true, vatRate: true } });
+      values = {
+        ...values, contactId: w.contactId, currency: w.contact.currency, waybillId: w.id, waybillNo: w.waybillNo, stockMode: "NONE",
+        lines: w.lines.map((l) => {
+          const p = prods.find((x) => x.id === l.productId);
+          const price = p ? (direction === "SALE" ? (list?.prices[p.id] ?? p.sellPrice?.toString()) : p.buyPrice?.toString()) : null;
+          return {
+            productId: l.productId ?? "", name: l.name, description: null, quantity: l.quantity.toString().replace(".", ","), unit: l.unit, unitPrice: price ? price.replace(".", ",") : "",
+            discountType: "" as const, discountValue: "", vatRate: p?.vatRate ?? 20, vatExemptionCode: "", otvRate: "", otvCode: "0074", withholdingRate: "", withholdingCode: "",
+          };
+        }),
+      };
+    }
   }
   const label = values.kind === "RETURN" ? "Yeni iade faturası" : "Yeni fatura";
   return (

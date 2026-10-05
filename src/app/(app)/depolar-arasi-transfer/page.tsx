@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { requireUser } from "@/server/auth/session";
-import { ComingSoon } from "@/components/coming-soon";
+import { TransferListPage } from "@/components/stock-views";
 
 export const metadata: Metadata = { title: "Depolar Arası Transfer" };
 
-export default async function Page() {
-  await requireUser();
-  return <ComingSoon title="Depolar Arası Transfer" phase={5} />;
+export default function Page(props: PageProps<"/depolar-arasi-transfer">) {
+  return <TransferListPage searchParams={props.searchParams} />;
 }

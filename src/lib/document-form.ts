@@ -31,6 +31,10 @@ export const documentHeaderSchema = z
     /** İade faturasında iade edilen faturanın no / tarihi (e-belgede zorunlu) */
     returnRefNo: optText(40),
     returnRefDate: optDate,
+    /** Stok hareketinin yazılacağı depo (boş = varsayılan) */
+    warehouseId: optText(50),
+    /** İrsaliyeden oluşturulan fatura (stok irsaliyede hareket etti) */
+    waybillId: optText(50),
     docDiscountType: z.enum(["PERCENT", "AMOUNT", ""]).optional(),
     docDiscountValue: z.string().optional(),
   })

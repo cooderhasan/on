@@ -172,7 +172,7 @@ Account (kasa/banka) · Transaction (tahsilat/ödeme/transfer) · Cheque · Cate
 
 ## 5. Fazlar
 
-Durum: Faz 0 ✅ · Faz 1 ✅ · Faz 2 ✅ · Faz 3 ✅ · Faz 4 ✅ (5 Ekim 2026 — NES test anahtarıyla gerçek deneme bekleniyor)
+Durum: Faz 0 ✅ · Faz 1 ✅ · Faz 2 ✅ · Faz 3 ✅ · Faz 4 ✅ · Faz 5 ✅ (5 Ekim 2026 — e-İrsaliye ileri faz)
 
 
 | Faz | Kapsam | Bitti sayılır |

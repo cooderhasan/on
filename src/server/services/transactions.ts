@@ -166,8 +166,9 @@ export async function createCashMove(user: CurrentUser, input: z.infer<typeof ca
 }
 
 export async function deleteTransaction(user: CurrentUser, id: string) {
-  const t = await db.transaction.findUnique({ where: { id }, select: { type: true, invoiceId: true, contactId: true, invoice: { select: { direction: true, eDocStatus: true } } } });
+  const t = await db.transaction.findUnique({ where: { id }, select: { type: true, invoiceId: true, contactId: true, chequeId: true, invoice: { select: { direction: true, eDocStatus: true } } } });
   if (!t) throw new AppError("NOT_FOUND", "Hareket bulunamadı.");
+  if (t.chequeId) throw new AppError("CONFLICT", "Çek hareketi Çekler ekranından geri alınır.");
   assertCan(user, "cash.write");
   if (t.invoice) assertCan(user, t.invoice.direction === "SALE" ? "sales.write" : "expenses.write");
   await db.transaction.delete({ where: { id } });
@@ -188,6 +189,7 @@ export async function accountMovements(user: CurrentUser, accountId: string) {
       invoice: { select: { id: true, name: true, invoiceNo: true, direction: true } },
       expense: { select: { id: true, description: true } },
       employee: { select: { id: true, name: true } },
+      cheque: { select: { id: true, chequeNo: true, direction: true, contactId: true, contact: { select: { title: true } } } },
       account: { select: { name: true } },
       targetAccount: { select: { name: true } },
     },

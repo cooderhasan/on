@@ -43,3 +43,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Yerel gizli notlar (API anahtarı vb.) — asla commit edilmez
+nes api.txt
+*.secret.txt

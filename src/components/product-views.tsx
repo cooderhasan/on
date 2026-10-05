@@ -7,6 +7,12 @@ import { getProduct, listProducts } from "@/server/services/products";
 import { listCategories } from "@/server/services/categories";
 import { orNotFound, pageParam, strParam } from "@/server/page-helpers";
 import { archiveProductAction } from "@/app/actions/records";
+import { deleteAdjustmentAction } from "@/app/actions/stock";
+import { activeWarehouses, listMovements, movementSource, stockByWarehouse } from "@/server/services/stock";
+import { db } from "@/server/db";
+import { AdjustStockForm } from "./stock-forms";
+import { ConfirmDelete } from "./money-forms";
+import { fmtDate } from "./invoice-views";
 import { Button, Card, EmptyState, LinkButton, PageHeader, Td, Th } from "./ui";
 import { buildHref, CategoryBadge, InfoRow, ListFooter, ListToolbar } from "./list";
 import { Money } from "./money";
@@ -133,11 +139,16 @@ export async function ProductDetailPage({ params }: { params: Promise<{ id: stri
   const p = await orNotFound(getProduct(user, (await params).id));
   const canEdit = can(user.role, "stock.write");
   const incl = (v: { toString(): string } | null) => (v === null ? null : new Decimal(v.toString()).times(100 + p.vatRate).dividedBy(100));
+  const [byWarehouse, warehouses, moves] = p.trackStock
+    ? await Promise.all([stockByWarehouse({ productIds: [p.id] }), activeWarehouses(), listMovements(user, { productId: p.id })])
+    : [[], [], null];
+  const warehouseNames = p.trackStock ? new Map((await db.warehouse.findMany({ select: { id: true, name: true } })).map((w) => [w.id, w.name])) : new Map<string, string>();
+  const perWarehouse = byWarehouse.filter((s) => !s.quantity.isZero());
 
   return (
     <>
       <PageHeader title={p.name} parent={{ href: BASE, label: "Hizmet ve Ürünler" }} />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
             <h2 className="flex min-w-0 items-center gap-3 text-lg uppercase text-text"><Package className="size-7 shrink-0 text-text-3" /> {p.name}</h2>
@@ -160,6 +171,35 @@ export async function ProductDetailPage({ params }: { params: Promise<{ id: stri
               {p.sellPrice && <>{price(p.sellPrice, p.sellCurrency)} <span className="ml-2 text-xs text-text-3">KDV dahil <Money value={incl(p.sellPrice)!} currency={p.sellCurrency} /></span></>}
             </InfoRow>
           </dl>
+          {moves && (
+            <>
+              <div className="flex items-center justify-between border-t border-border px-4 py-3">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-text-2">Stok hareketleri</h3>
+                {moves.total > moves.rows.length && <Link href={`/stok-hareketleri?urun=${p.id}`} className="text-xs text-accent hover:underline">Tümü ({moves.total})</Link>}
+              </div>
+              {moves.rows.length === 0 ? (
+                <p className="px-4 pb-4 text-sm text-text-3">Henüz hareket yok.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[480px] text-sm">
+                    <tbody className="divide-y divide-border border-t border-border">
+                      {moves.rows.slice(0, 15).map((m) => {
+                        const src = movementSource(m);
+                        return (
+                          <tr key={m.id}>
+                            <Td className="whitespace-nowrap text-text-2">{fmtDate(m.date)}</Td>
+                            <Td>{src.href ? <Link href={src.href} className="text-accent hover:underline">{src.label}</Link> : src.label}{warehouses.length > 1 && <span className="ml-2 text-xs text-text-3">{m.warehouse.name}</span>}</Td>
+                            <Td className="text-right"><span className={cn("font-mono", m.quantity.isNegative() ? "text-danger" : "text-success")}>{m.quantity.isNegative() ? "" : "+"}{m.quantity.toString().replace(".", ",")}</span></Td>
+                            <Td className="w-10">{canEdit && m.source === "ADJUSTMENT" && <ConfirmDelete action={deleteAdjustmentAction} id={m.id} compact label="Düzeltmeyi sil" confirmText="Silinsin mi?" />}</Td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
         </Card>
         <aside className="flex flex-col gap-4">
           <Card>
@@ -173,13 +213,25 @@ export async function ProductDetailPage({ params }: { params: Promise<{ id: stri
                       Kritik seviye: <Qty value={p.criticalStock} unit={p.unit} />
                     </p>
                   )}
-                  <p className="mt-2 text-xs text-text-3">Stok hareketleri (fatura, irsaliye, sayım) Faz 5 ile listelenecek.</p>
+                  {(perWarehouse.length > 1 || (warehouses.length > 1 && perWarehouse.length > 0)) && (
+                    <ul className="mt-3 flex flex-col gap-1 border-t border-border pt-2 text-xs">
+                      {perWarehouse.map((s) => (
+                        <li key={s.warehouseId} className="flex justify-between gap-2"><Link href={`/depolar/${s.warehouseId}`} className="text-text-2 hover:text-accent">{warehouseNames.get(s.warehouseId)}</Link><Qty value={s.quantity} unit={p.unit} /></li>
+                      ))}
+                    </ul>
+                  )}
                 </>
               ) : (
                 <p className="mt-2 text-sm text-text-3">Bu hizmet / ürün için stok takibi yapılmıyor.</p>
               )}
             </div>
           </Card>
+          {canEdit && p.trackStock && (
+            <Card className="p-4">
+              <p className="mb-2 text-[11px] font-semibold uppercase text-text-2">Stok güncelle</p>
+              <AdjustStockForm productId={p.id} warehouses={warehouses} unitLabel={unitLabel(p.unit)} />
+            </Card>
+          )}
           {canEdit && (
             <form action={archiveProductAction}>
               <input type="hidden" name="id" value={p.id} />

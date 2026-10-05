@@ -86,7 +86,8 @@ describe("satış faturası", () => {
     expect((await db.product.findUniqueOrThrow({ where: { id: aku.id } })).stockQuantity.toString()).toBe("9");
     await saveInvoice(u, id, inv({ stockMode: "NONE" }, [line({ productId: aku.id, quantity: "5" })]));
     expect((await db.product.findUniqueOrThrow({ where: { id: aku.id } })).stockQuantity.toString()).toBe("10");
-    expect(await db.stockMovement.count()).toBe(0);
+    // Yalnızca ürün kartındaki başlangıç stoku (açılış hareketi) kalır
+    expect(await db.stockMovement.count({ where: { source: { not: "OPENING" } } })).toBe(0);
   });
 
   it("iade faturası stoğu geri koyar ve bakiyeyi düşürür", async () => {

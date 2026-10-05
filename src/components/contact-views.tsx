@@ -141,7 +141,7 @@ export async function ContactDetailPage({ kind, params }: { kind: ContactKind; p
   return (
     <>
       <PageHeader title={c.shortName || c.title} parent={{ href: L.path, label: L.plural }} />
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
             <h2 className="flex min-w-0 items-center gap-3 text-lg text-text">
@@ -209,6 +209,7 @@ export async function ContactDetailPage({ kind, params }: { kind: ContactKind; p
               <p className="mb-2 text-[11px] font-semibold uppercase text-text-2">{kind === "CUSTOMER" ? "Cari tahsilat ekle" : "Cari ödeme ekle"}</p>
               <SettlementForm contactId={c.id} accounts={accounts} docCurrency={c.currency} label={kind === "CUSTOMER" ? "Tahsilat ekle" : "Ödeme ekle"} />
               <p className="mt-2 text-[11px] text-text-3">Belirli bir faturaya bağlamak için faturanın sayfasından ekleyin.</p>
+              <Link href={`/cekler/yeni?cari=${c.id}`} className="mt-2 inline-block text-xs text-accent hover:underline">{kind === "CUSTOMER" ? "Çek ile tahsil et" : "Çek ile öde"}</Link>
             </Card>
           )}
           {kind === "CUSTOMER" && can(user.role, "sales.write") && <LinkButton href={`/satislar/yeni?musteri=${c.id}`} variant="secondary">Fatura oluştur</LinkButton>}
@@ -232,7 +233,10 @@ export async function ContactDetailPage({ kind, params }: { kind: ContactKind; p
 export async function ContactFormPage({ kind, params }: { kind: ContactKind; params?: Promise<{ id: string }> }) {
   const user = await requireUser(writePerm(kind));
   const L = KIND_LABELS[kind];
-  const categories = await listCategories("CONTACT");
+  const [categories, priceLists] = await Promise.all([
+    listCategories("CONTACT"),
+    kind === "CUSTOMER" ? db.priceList.findMany({ where: { isArchived: false }, orderBy: { name: "asc" }, select: { id: true, name: true, currency: true } }) : Promise.resolve([]),
+  ]);
   const id = params ? (await params).id : null;
   let values: ContactFormValues;
   if (id) {
@@ -248,7 +252,7 @@ export async function ContactFormPage({ kind, params }: { kind: ContactKind; par
   } else {
     values = {
       kind, personType: "LEGAL", title: "", shortName: null, taxNumber: null, taxOffice: null, categoryId: null, email: null, phone: null, fax: null,
-      address: null, isAbroad: false, postalCode: null, district: null, city: null, country: null, currency: "TRY", rateType: "BUYING",
+      address: null, isAbroad: false, postalCode: null, district: null, city: null, country: null, currency: "TRY", rateType: "BUYING", priceListId: null,
       openingBalance: null, openingBalanceSide: null, openingBalanceDate: null, notes: null, ibans: [], people: [],
     };
   }
@@ -256,7 +260,7 @@ export async function ContactFormPage({ kind, params }: { kind: ContactKind; par
     <>
       <PageHeader title={id ? "Düzenle" : "Yeni"} parent={{ href: id ? `${L.path}/${id}` : L.path, label: id ? values.title : L.plural }} />
       <Card>
-        <ContactForm values={values} categories={categories} cancelHref={id ? `${L.path}/${id}` : L.path} />
+        <ContactForm values={values} categories={categories} priceLists={priceLists} cancelHref={id ? `${L.path}/${id}` : L.path} />
       </Card>
     </>
   );

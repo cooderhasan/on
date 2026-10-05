@@ -86,7 +86,7 @@ export async function QuoteDetailPage({ params }: { params: Promise<{ id: string
   return (
     <>
       <PageHeader title={qt.name || "Teklif"} parent={{ href: BASE, label: "Teklifler" }} />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
             <h2 className="flex items-center gap-3 text-lg text-text"><FileText className="size-7 text-accent" /> {qt.name || "Teklif"} {qt.quoteNo && <span className="font-mono text-sm text-text-3">#{qt.quoteNo}</span>}</h2>

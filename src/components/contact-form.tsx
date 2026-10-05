@@ -30,6 +30,7 @@ export interface ContactFormValues {
   country: string | null;
   currency: string;
   rateType: "BUYING" | "SELLING";
+  priceListId: string | null;
   openingBalance: string | null;
   openingBalanceSide: "DEBIT" | "CREDIT" | null;
   openingBalanceDate: string | null;
@@ -52,7 +53,7 @@ function Segmented<T extends string>({ name, value, onChange, options }: { name:
   );
 }
 
-export function ContactForm({ values, categories, cancelHref }: { values: ContactFormValues; categories: Array<{ id: string; name: string }>; cancelHref: string }) {
+export function ContactForm({ values, categories, priceLists = [], cancelHref }: { values: ContactFormValues; categories: Array<{ id: string; name: string }>; priceLists?: Array<{ id: string; name: string; currency: string }>; cancelHref: string }) {
   const [personType, setPersonType] = useState(values.personType);
   const [rateType, setRateType] = useState(values.rateType);
   const [abroad, setAbroad] = useState(values.isAbroad);
@@ -170,6 +171,14 @@ export function ContactForm({ values, categories, cancelHref }: { values: Contac
                 ))}
               </Select>
             </FormRow>
+            {values.kind === "CUSTOMER" && priceLists.length > 0 && (
+              <FormRow label="Fiyat listesi" htmlFor="priceListId" icon={<List />} hint="Satış belgelerinde ürün fiyatı bu listeden gelir." error={s.fieldErrors?.priceListId}>
+                <Select id="priceListId" name="priceListId" defaultValue={values.priceListId ?? ""} className="max-w-72">
+                  <option value="">Ürün kartındaki satış fiyatı</option>
+                  {priceLists.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.currency})</option>)}
+                </Select>
+              </FormRow>
+            )}
             <FormRow label="Döviz kuru" icon={<Coins />} hint="Bakiye hesaplanırken kullanılır.">
               <Segmented name="rateType" value={rateType} onChange={setRateType} options={[["BUYING", "Alış"], ["SELLING", "Satış"]]} />
             </FormRow>

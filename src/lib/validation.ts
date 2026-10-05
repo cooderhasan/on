@@ -104,6 +104,8 @@ export const contactSchema = z
     country: optText(100),
     currency,
     rateType: z.enum(["BUYING", "SELLING"]).default("BUYING"),
+    /** Müşteriye özel fiyat listesi */
+    priceListId: optText(50),
     hasOpeningBalance: checkbox,
     openingBalance: optDecimal({ min: 0, label: "Açılış bakiyesi" }),
     openingBalanceSide: z.enum(["DEBIT", "CREDIT"]).optional(),

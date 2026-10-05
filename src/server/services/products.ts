@@ -8,6 +8,8 @@ import type { CurrentUser } from "@/server/auth/session";
 import { AppError } from "@/lib/errors";
 import { isUniqueViolation } from "@/server/prisma-errors";
 import type { productSchema } from "@/lib/validation";
+import Decimal from "decimal.js";
+import { syncOpeningMove } from "./stock";
 
 export const PAGE_SIZE = 25;
 
@@ -63,8 +65,12 @@ export async function createProduct(user: CurrentUser, input: ProductInput) {
   await assertCategory(input.categoryId);
   const data = toData(input);
   try {
-    // Yeni üründe güncel stok = başlangıç stoku
-    const p = await db.product.create({ data: { ...data, stockQuantity: data.initialStock } });
+    // Yeni üründe güncel stok = başlangıç stoku (varsayılan depoya "açılış" hareketi)
+    const p = await db.$transaction(async (tx) => {
+      const created = await tx.product.create({ data: { ...data, stockQuantity: data.initialStock } });
+      await syncOpeningMove(tx, created.id, new Decimal(data.initialStock), created.createdAt);
+      return created;
+    });
     await audit({ userId: user.id, action: "product.created", entityType: "Product", entityId: p.id });
     return p;
   } catch (err) {
@@ -76,13 +82,17 @@ export async function createProduct(user: CurrentUser, input: ProductInput) {
 export async function updateProduct(user: CurrentUser, id: string, input: ProductInput) {
   assertCan(user, "stock.write");
   await assertCategory(input.categoryId);
-  const existing = await db.product.findUnique({ where: { id }, select: { initialStock: true, stockQuantity: true } });
+  const existing = await db.product.findUnique({ where: { id }, select: { initialStock: true, stockQuantity: true, createdAt: true } });
   if (!existing) throw new AppError("NOT_FOUND", "Ürün bulunamadı.");
   const data = toData(input);
-  // Başlangıç stoku değişirse fark güncel stoğa yansır (hareketler korunur)
-  const delta = existing.initialStock.negated().plus(data.initialStock);
+  // Başlangıç stoku değişirse fark güncel stoğa ve açılış hareketine yansır (diğer hareketler korunur)
+  const delta = new Decimal(data.initialStock).minus(existing.initialStock.toString());
   try {
-    const p = await db.product.update({ where: { id }, data: { ...data, stockQuantity: existing.stockQuantity.plus(delta) } });
+    const p = await db.$transaction(async (tx) => {
+      const updated = await tx.product.update({ where: { id }, data: { ...data, stockQuantity: { increment: delta.toString() } } });
+      await syncOpeningMove(tx, id, new Decimal(data.initialStock), existing.createdAt);
+      return updated;
+    });
     await audit({ userId: user.id, action: "product.updated", entityType: "Product", entityId: id });
     return p;
   } catch (err) {

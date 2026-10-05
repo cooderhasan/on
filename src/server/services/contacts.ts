@@ -80,10 +80,18 @@ function toData(input: ContactInput) {
     ...rest,
     // Yurt dışı cari için il / ilçe yerine ülke
     country: input.isAbroad ? input.country : null,
+    // Fiyat listesi yalnızca müşteride
+    priceListId: input.kind === "CUSTOMER" ? input.priceListId : null,
     openingBalance: hasOpeningBalance ? openingBalance : null,
     openingBalanceSide: hasOpeningBalance ? (openingBalanceSide ?? "DEBIT") : null,
     openingBalanceDate: hasOpeningBalance && openingBalanceDate ? new Date(openingBalanceDate) : null,
   };
+}
+
+async function assertPriceList(priceListId: string | null) {
+  if (!priceListId) return;
+  const l = await db.priceList.findUnique({ where: { id: priceListId }, select: { isArchived: true } });
+  if (!l) throw new AppError("VALIDATION", "Fiyat listesi bulunamadı.", { priceListId: "Geçersiz" });
 }
 
 async function assertCategory(categoryId: string | null) {
@@ -102,6 +110,7 @@ async function assertUniqueTaxNumber(kind: ContactKind, taxNumber: string | null
 export async function createContact(user: CurrentUser, input: ContactInput, rep: Repeated) {
   assertCan(user, writePerm(input.kind));
   await assertCategory(input.categoryId);
+  await assertPriceList(input.priceListId);
   await assertUniqueTaxNumber(input.kind, input.taxNumber);
   const c = await db.contact.create({
     data: {
@@ -122,6 +131,7 @@ export async function updateContact(user: CurrentUser, id: string, input: Contac
   if (existing.kind !== input.kind) throw new AppError("VALIDATION", "Kayıt türü değiştirilemez.");
   assertCan(user, writePerm(existing.kind));
   await assertCategory(input.categoryId);
+  await assertPriceList(input.priceListId);
   await assertUniqueTaxNumber(existing.kind, input.taxNumber, id);
   // IBAN ve yetkililer formdaki listeyle değiştirilir (tek işlem)
   const c = await db.$transaction(async (tx) => {

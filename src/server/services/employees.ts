@@ -62,7 +62,7 @@ export async function getEmployee(user: CurrentUser, id: string) {
   // Hareketler: tahakkuk (−) ve ödeme (+), en yeni üstte
   const movements = [
     ...e.expenses.map((x) => ({ id: x.id, date: x.date, label: x.description, href: `/giderler/kayit/${x.id}`, amount: D(x.totalAmount).negated(), kind: "Tahakkuk" as const })),
-    ...e.transactions.map((t) => ({ id: t.id, date: t.date, label: [t.account.name, t.description].filter(Boolean).join(" · "), href: null, amount: D(t.appliedAmount), kind: t.expenseId ? ("Ödeme" as const) : ("Avans / ödeme" as const) })),
+    ...e.transactions.map((t) => ({ id: t.id, date: t.date, label: [t.account?.name, t.description].filter(Boolean).join(" · "), href: null, amount: D(t.appliedAmount), kind: t.expenseId ? ("Ödeme" as const) : ("Avans / ödeme" as const) })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime());
   return { ...e, balance, movements };
 }

@@ -2,6 +2,7 @@ import "server-only";
 import Decimal from "decimal.js";
 import { db } from "@/server/db";
 import { VOID_EDOC } from "@/lib/edoc-status";
+import { chequeTxLabel } from "@/lib/cheque";
 
 /**
  * Bakiye kuralları (tek yer):
@@ -9,7 +10,7 @@ import { VOID_EDOC } from "@/lib/edoc-status";
  *    açılış DEBIT +, CREDIT −
  *    satış faturası +ödenecek, satış iadesi −
  *    alış faturası −ödenecek, alış iadesi +
- *    tahsilat −uygulanan tutar, ödeme +uygulanan tutar
+ *    tahsilat −uygulanan tutar, ödeme +uygulanan tutar (çek hareketleri dahil — hesapsız; bkz. cheques.ts)
  *  Kasa / banka (hesap para biriminde):
  *    açılış + tahsilat + para girişi + gelen transfer − ödeme − para çıkışı − giden transfer
  *  Fatura kalan = ödenecek − (fatura yönüne uygun) bağlı hareketlerin uygulanan tutarı
@@ -60,7 +61,7 @@ export async function contactStatement(id: string): Promise<StatementRow[]> {
   const [c, invoices, txs, expenses] = await Promise.all([
     db.contact.findUniqueOrThrow({ where: { id }, select: { openingBalance: true, openingBalanceSide: true, openingBalanceDate: true, createdAt: true, kind: true } }),
     db.invoice.findMany({ where: { contactId: id, eDocStatus: { notIn: [...VOID_EDOC] } }, select: { id: true, direction: true, kind: true, issueDate: true, name: true, invoiceNo: true, payableTotal: true, createdAt: true } }),
-    db.transaction.findMany({ where: { contactId: id, type: { in: ["COLLECTION", "PAYMENT"] } }, select: { id: true, type: true, date: true, appliedAmount: true, description: true, invoiceId: true, createdAt: true, account: { select: { name: true } } } }),
+    db.transaction.findMany({ where: { contactId: id, type: { in: ["COLLECTION", "PAYMENT"] } }, select: { id: true, type: true, date: true, appliedAmount: true, description: true, invoiceId: true, contactId: true, createdAt: true, account: { select: { name: true } }, cheque: { select: { id: true, direction: true, contactId: true, chequeNo: true } } } }),
     db.expense.findMany({ where: { contactId: id }, select: { id: true, date: true, description: true, receiptNo: true, totalAmount: true, createdAt: true } }),
   ]);
   type Raw = Omit<StatementRow, "balance"> & { sortKey: Date };
@@ -90,7 +91,8 @@ export async function contactStatement(id: string): Promise<StatementRow[]> {
       date: t.date,
       sortKey: t.createdAt,
       kind: t.type === "COLLECTION" ? "COLLECTION" : "PAYMENT",
-      label: [t.type === "COLLECTION" ? "Tahsilat" : "Ödeme", t.account.name, t.description].filter(Boolean).join(" · "),
+      label: t.cheque ? chequeTxLabel(t, t.cheque) : [t.type === "COLLECTION" ? "Tahsilat" : "Ödeme", t.account?.name, t.description].filter(Boolean).join(" · "),
+      href: t.cheque ? `/cekler/${t.cheque.id}` : undefined,
       debit: t.type === "PAYMENT" ? v : new Decimal(0),
       credit: t.type === "COLLECTION" ? v : new Decimal(0),
     });
@@ -128,6 +130,7 @@ export async function accountBalances(ids: string[]): Promise<Map<string, Decima
   const add = (id: string, v: Decimal) => out.set(id, (out.get(id) ?? new Decimal(0)).plus(v));
   for (const a of accounts) add(a.id, D(a.openingBalance));
   for (const t of outgoing) {
+    if (!t.accountId) continue;
     const v = D(t._sum.amount);
     add(t.accountId, t.type === "COLLECTION" || t.type === "DEPOSIT" ? v : v.negated());
   }

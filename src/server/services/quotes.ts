@@ -132,7 +132,7 @@ export async function convertQuoteToInvoice(user: CurrentUser, id: string) {
     quoteId: q.id,
     header: {
       contactId: q.contactId, name: q.name, docNo: null, issueDate: today, dueDate: today, currency: q.currency as "TRY",
-      exchangeRate: q.exchangeRate.toString(), categoryId: null, notes: q.notes, orderNo: null, orderDate: null, stockMode: "WITH_INVOICE", kind: "INVOICE", returnRefNo: null, returnRefDate: null,
+      exchangeRate: q.exchangeRate.toString(), categoryId: null, notes: q.notes, orderNo: null, orderDate: null, stockMode: "WITH_INVOICE", kind: "INVOICE", returnRefNo: null, returnRefDate: null, warehouseId: null, waybillId: null,
     },
     lines: q.lines.map((l) => ({
       productId: l.productId, name: l.name, description: l.description, quantity: l.quantity.toString(), unit: l.unit, unitPrice: l.unitPrice.toString(),

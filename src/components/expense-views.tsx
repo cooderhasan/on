@@ -125,7 +125,7 @@ export async function ExpenseDetailPage({ params }: { params: Promise<{ id: stri
   return (
     <>
       <PageHeader title={e.description} parent={{ href: "/giderler", label: "Gider Listesi" }} />
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
             <h2 className="flex items-center gap-3 text-lg text-text"><FileText className="size-7 text-[#8a6d5a]" /> {e.description}</h2>
@@ -169,7 +169,7 @@ export async function ExpenseDetailPage({ params }: { params: Promise<{ id: stri
                   <li key={t.id} className="flex items-start justify-between gap-2 px-4 py-2.5 text-sm">
                     <div>
                       <Money value={t.appliedAmount} />
-                      <p className="text-xs text-text-3">{fmtDate(t.date)} · <Link href={`/kasa-ve-bankalar/${t.account.id}`} className="hover:underline">{t.account.name}</Link></p>
+                      <p className="text-xs text-text-3">{fmtDate(t.date)}{t.account && <> · <Link href={`/kasa-ve-bankalar/${t.account.id}`} className="hover:underline">{t.account.name}</Link></>}</p>
                     </div>
                     {canWrite && <DeleteTransactionButton id={t.id} />}
                   </li>
@@ -341,7 +341,7 @@ export async function EmployeeDetailPage({ params }: { params: Promise<{ id: str
   return (
     <>
       <PageHeader title={e.name} parent={{ href: "/calisanlar", label: "Çalışanlar" }} />
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
             <h2 className="flex items-center gap-3 text-lg uppercase text-text"><User className="size-7 text-text-3" /> {e.name}</h2>

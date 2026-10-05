@@ -13,6 +13,7 @@ import { parseMoneyInput } from "@/lib/money";
 import type { documentHeaderSchema, ParsedLine } from "@/lib/document-form";
 import { invoicePaid, invoiceSign } from "./ledger";
 import { isLockedEDoc, isVoidEDoc } from "@/lib/edoc-status";
+import { applyMoves, resolveWarehouse, revertMoves } from "./stock";
 
 export const PAGE_SIZE = 25;
 const D = (v: { toString(): string } | null | undefined) => new Decimal(v?.toString() ?? 0);
@@ -98,7 +99,9 @@ export async function getInvoice(user: CurrentUser, id: string) {
       category: true,
       lines: { orderBy: { position: "asc" } },
       tags: { include: { tag: true } },
-      transactions: { orderBy: { date: "asc" }, include: { account: { select: { id: true, name: true, currency: true } } } },
+      transactions: { orderBy: { date: "asc" }, include: { account: { select: { id: true, name: true, currency: true } }, cheque: { select: { id: true, chequeNo: true } } } },
+      waybills: { select: { id: true, waybillNo: true, dispatchDate: true } },
+      warehouse: { select: { id: true, name: true } },
       quote: { select: { id: true, quoteNo: true } },
     },
   });
@@ -150,6 +153,17 @@ export async function saveInvoice(user: CurrentUser, id: string | null, input: S
   const tracked = new Set(products.filter((p) => p.trackStock).map((p) => p.id));
   const tagIds = [...new Set(input.tagIds)].slice(0, 20);
 
+  // İrsaliyeden fatura: stok irsaliyede hareket etti → faturada stok hareketi yok
+  let waybill: { id: string; warehouseId: string } | null = null;
+  if (header.waybillId && !id) {
+    const w = await db.waybill.findUnique({ where: { id: header.waybillId }, select: { id: true, direction: true, contactId: true, invoiceId: true, warehouseId: true } });
+    if (!w || w.direction !== direction) throw new AppError("VALIDATION", "İrsaliye bulunamadı.");
+    if (w.invoiceId) throw new AppError("CONFLICT", "Bu irsaliye zaten faturalanmış.");
+    if (w.contactId !== contact.id) throw new AppError("VALIDATION", "Fatura, irsaliyedeki cariye kesilmeli.", { contactId: "İrsaliyedeki cari" });
+    waybill = { id: w.id, warehouseId: w.warehouseId };
+  }
+  const stockMode = waybill ? "NONE" : header.stockMode;
+
   const calc = calculateDocument(lines, input.discount);
   const t = calc.totals;
   const data = {
@@ -166,7 +180,7 @@ export async function saveInvoice(user: CurrentUser, id: string | null, input: S
     notes: header.notes,
     orderNo: header.orderNo,
     orderDate: header.orderDate ? new Date(header.orderDate) : null,
-    stockMode: header.stockMode,
+    stockMode,
     returnRefNo: header.kind === "RETURN" ? header.returnRefNo : null,
     returnRefDate: header.kind === "RETURN" && header.returnRefDate ? new Date(header.returnRefDate) : null,
     discountType: input.discount.discountType,
@@ -206,6 +220,7 @@ export async function saveInvoice(user: CurrentUser, id: string | null, input: S
   }));
 
   const saved = await db.$transaction(async (tx) => {
+    const warehouseId = waybill ? waybill.warehouseId : await resolveWarehouse(tx, header.warehouseId);
     let invoiceId = id;
     if (id) {
       const existing = await tx.invoice.findUnique({ where: { id }, select: { direction: true, eDocStatus: true, transactions: { select: { appliedAmount: true } } } });
@@ -213,39 +228,32 @@ export async function saveInvoice(user: CurrentUser, id: string | null, input: S
       if (isLocked(existing.eDocStatus)) throw new AppError("CONFLICT", "Gönderilmiş / resmileşmiş fatura değiştirilemez. Gerekirse iade faturası kesin.");
       const paid = existing.transactions.reduce((a, x) => a.plus(D(x.appliedAmount)), new Decimal(0));
       if (t.payableTotal.lessThan(paid)) throw new AppError("VALIDATION", "Fatura tutarı, yapılmış tahsilat / ödemelerin altına düşemez. Önce tahsilatı düzeltin.");
-      await revertStock(tx, id);
+      await revertMoves(tx, { invoiceId: id });
       await tx.documentLine.deleteMany({ where: { invoiceId: id } });
       await tx.invoiceTag.deleteMany({ where: { invoiceId: id } });
       // Hatalı gönderilmiş fatura düzeltildi: içerik değiştiği için bir sonraki gönderim yeni UUID ile yapılır
       const eDocReset = existing.eDocStatus === "FAILED" ? { eDocStatus: "NONE" as const, eDocUuid: null, eDocError: null } : {};
-      await tx.invoice.update({ where: { id }, data: { ...data, ...eDocReset, lines: { create: lineData }, tags: { create: tagIds.map((tagId) => ({ tagId })) } } });
+      await tx.invoice.update({ where: { id }, data: { ...data, warehouseId, ...eDocReset, lines: { create: lineData }, tags: { create: tagIds.map((tagId) => ({ tagId })) } } });
     } else {
-      const inv = await tx.invoice.create({ data: { ...data, createdById: user.id, quoteId: input.quoteId ?? null, lines: { create: lineData }, tags: { create: tagIds.map((tagId) => ({ tagId })) } } });
+      const inv = await tx.invoice.create({ data: { ...data, warehouseId, createdById: user.id, quoteId: input.quoteId ?? null, lines: { create: lineData }, tags: { create: tagIds.map((tagId) => ({ tagId })) } } });
       invoiceId = inv.id;
+      if (waybill) await tx.waybill.update({ where: { id: waybill.id }, data: { invoiceId: inv.id } });
     }
     // Stok hareketleri (yalnızca stok takipli ürünler, "fatura ile" seçiliyse)
-    if (header.stockMode === "WITH_INVOICE") {
+    if (stockMode === "WITH_INVOICE") {
       const sign = stockSign(direction, header.kind);
-      const moves = lines
-        .filter((l) => l.productId && tracked.has(l.productId))
-        .map((l) => ({ productId: l.productId!, quantity: new Decimal(l.quantity).times(sign).toString(), date: data.issueDate, source: "INVOICE" as const, invoiceId: invoiceId! }));
-      if (moves.length) {
-        await tx.stockMovement.createMany({ data: moves });
-        for (const m of moves) await tx.product.update({ where: { id: m.productId }, data: { stockQuantity: { increment: m.quantity } } });
-      }
+      await applyMoves(
+        tx,
+        lines
+          .filter((l) => l.productId && tracked.has(l.productId))
+          .map((l) => ({ productId: l.productId!, warehouseId, quantity: new Decimal(l.quantity).times(sign), date: data.issueDate, source: "INVOICE" as const, invoiceId: invoiceId!, createdById: user.id })),
+      );
     }
     return invoiceId!;
   });
 
   await audit({ userId: user.id, action: id ? "invoice.updated" : "invoice.created", entityType: "Invoice", entityId: saved, metadata: { direction, total: t.payableTotal.toString(), currency: header.currency } });
   return saved;
-}
-
-/** Faturanın stok hareketlerini geri alır (düzenleme / silme öncesi) */
-async function revertStock(tx: Prisma.TransactionClient, invoiceId: string) {
-  const moves = await tx.stockMovement.findMany({ where: { invoiceId }, select: { productId: true, quantity: true } });
-  for (const m of moves) await tx.product.update({ where: { id: m.productId }, data: { stockQuantity: { decrement: m.quantity } } });
-  await tx.stockMovement.deleteMany({ where: { invoiceId } });
 }
 
 export async function deleteInvoice(user: CurrentUser, id: string) {
@@ -255,7 +263,7 @@ export async function deleteInvoice(user: CurrentUser, id: string) {
   if (!isDeletable(inv.eDocStatus)) throw new AppError("CONFLICT", "Gönderilmiş / resmileşmiş fatura silinemez. Gerekirse iade faturası kesin veya e-Arşiv'i iptal edin.");
   if (inv._count.transactions > 0) throw new AppError("CONFLICT", "Bu faturaya bağlı tahsilat / ödeme var. Önce onları silin.");
   await db.$transaction(async (tx) => {
-    await revertStock(tx, id);
+    await revertMoves(tx, { invoiceId: id });
     // Gelen e-faturadan oluşturulduysa, gelen fatura yeniden işlenebilir hale gelir
     await tx.incomingInvoice.updateMany({ where: { purchaseInvoiceId: id }, data: { status: "NEW", purchaseInvoiceId: null } });
     await tx.invoice.delete({ where: { id } });

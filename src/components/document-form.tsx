@@ -53,13 +53,20 @@ export interface DocumentFormValues {
   returnRefNo?: string | null;
   returnRefDate?: string | null;
   stockMode: "WITH_INVOICE" | "NONE";
+  /** Stok deposu (boş = varsayılan) */
+  warehouseId?: string | null;
+  /** İrsaliyeden oluşturuluyorsa (stok irsaliyede hareket etti) */
+  waybillId?: string | null;
+  waybillNo?: string | null;
   discountType: "PERCENT" | "AMOUNT" | null;
   discountValue: string | null;
   tagIds: string[];
   lines: Array<Omit<LineValue, "key" | "show">>;
 }
 
-export interface FormContact { id: string; title: string; currency: string; taxNumber: string | null; address: string | null; district: string | null; city: string | null }
+export interface FormContact { id: string; title: string; currency: string; taxNumber: string | null; address: string | null; district: string | null; city: string | null; priceListId?: string | null }
+export interface FormPriceList { id: string; currency: string; prices: Record<string, string> }
+export interface FormWarehouse { id: string; name: string; isDefault: boolean }
 export interface FormProduct { id: string; name: string; code: string | null; unit: string; sellPrice: string | null; vatRate: number }
 
 const tr = (v: string) => v.replace(".", ",");
@@ -71,7 +78,7 @@ const addDays = (iso: string, n: number) => {
 const dec = (s: string) => parseMoneyInput(s) ?? new Decimal(0);
 
 export function DocumentForm({
-  mode, direction = "SALE", values, contacts, products, categories, tags, accounts, cancelHref,
+  mode, direction = "SALE", values, contacts, products, categories, tags, accounts, cancelHref, warehouses = [], priceLists = [],
 }: {
   mode: "invoice" | "quote";
   /** Satış (müşteri) veya alış (tedarikçi) faturası */
@@ -83,6 +90,9 @@ export function DocumentForm({
   tags: Array<{ id: string; name: string }>;
   accounts: Array<{ id: string; name: string; currency: string }>;
   cancelHref: string;
+  warehouses?: FormWarehouse[];
+  /** Satışta müşterinin fiyat listesi (ürün seçilince fiyat buradan) */
+  priceLists?: FormPriceList[];
 }) {
   const isQuote = mode === "quote";
   const [contactId, setContactId] = useState(values.contactId);
@@ -111,10 +121,12 @@ export function DocumentForm({
   };
   const removeLine = (key: number) => setLines((ls) => (ls.length > 1 ? ls.filter((l) => l.key !== key) : ls));
 
-  /** Ürün adı yazılınca listedeki ürünle eşleşirse birim / fiyat / KDV doldurulur */
+  /** Ürün adı yazılınca listedeki ürünle eşleşirse birim / fiyat / KDV doldurulur (müşterinin fiyat listesi öncelikli) */
   const onName = (l: LineValue, name: string) => {
     const p = products.find((x) => x.name.toLocaleLowerCase("tr") === name.trim().toLocaleLowerCase("tr"));
-    if (p && p.id !== l.productId) update(l.key, { name: p.name, productId: p.id, unit: p.unit, vatRate: p.vatRate, unitPrice: p.sellPrice ? tr(new Decimal(p.sellPrice).toDecimalPlaces(4).toString()) : l.unitPrice });
+    const list = contact?.priceListId ? priceLists.find((x) => x.id === contact.priceListId && x.currency === currency) : undefined;
+    const price = p ? (list?.prices[p.id] ?? p.sellPrice) : null;
+    if (p && p.id !== l.productId) update(l.key, { name: p.name, productId: p.id, unit: p.unit, vatRate: p.vatRate, unitPrice: price ? tr(new Decimal(price).toDecimalPlaces(4).toString()) : l.unitPrice });
     else update(l.key, { name, productId: p ? p.id : "" });
   };
 
@@ -153,6 +165,7 @@ export function DocumentForm({
           {values.id && <input type="hidden" name="id" value={values.id} />}
           <input type="hidden" name="direction" value={direction} />
           <input type="hidden" name="kind" value={values.kind} />
+          {values.waybillId && <input type="hidden" name="waybillId" value={values.waybillId} />}
           <FormHeader cancelHref={cancelHref}>
             <FormRow label={isQuote ? "Teklif ismi" : "Fatura ismi"} htmlFor="name" icon={<FileText />}>
               <Input id="name" name="name" maxLength={150} defaultValue={values.name ?? ""} placeholder={title} />
@@ -276,7 +289,13 @@ export function DocumentForm({
               <FormRow label={isQuote ? "Teklif notu" : "Fatura notu"} htmlFor="notes" icon={<Pencil />}>
                 <Textarea id="notes" name="notes" rows={2} defaultValue={values.notes ?? ""} />
               </FormRow>
-              {!isQuote && (
+              {!isQuote && values.waybillId && (
+                <FormRow label="Stok takibi" icon={<Warehouse />}>
+                  <p className="pt-2 text-sm text-text-2">Stok, {values.waybillNo ? `${values.waybillNo} numaralı ` : ""}irsaliye ile hareket etti; faturada stok hareketi yapılmaz.</p>
+                  <input type="hidden" name="stockMode" value="NONE" />
+                </FormRow>
+              )}
+              {!isQuote && !values.waybillId && (
                 <FormRow label="Stok takibi" icon={<Warehouse />}>
                   <div className="grid grid-cols-2 overflow-hidden rounded-sm border border-[#d6d6d6] text-sm">
                     {([["WITH_INVOICE", stockIn ? "Stok girişi yapılsın" : "Stok çıkışı yapılsın"], ["NONE", stockIn ? "Stok girişi yapılmasın" : "Stok çıkışı yapılmasın"]] as const).map(([v, label], i) => (
@@ -286,6 +305,11 @@ export function DocumentForm({
                       </label>
                     ))}
                   </div>
+                  {warehouses.length > 1 && (
+                    <Select name="warehouseId" defaultValue={values.warehouseId ?? warehouses.find((w) => w.isDefault)?.id ?? ""} aria-label="Depo" className="mt-2 max-w-72">
+                      {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}{w.isDefault ? " (varsayılan)" : ""}</option>)}
+                    </Select>
+                  )}
                 </FormRow>
               )}
             </div>
