@@ -16,6 +16,8 @@ if not exist node_modules (
 )
 echo Tablolar guncelleniyor...
 call npx prisma migrate deploy
+rem Şema değiştiyse veritabanı istemcisi yeniden üretilir (eski istemci "Unknown argument" hatası verir)
+call npx prisma generate
 echo.
 echo Uygulama baslatiliyor. Tarayici birkac saniye icinde acilacak: http://localhost:3000
 echo Kapatmak icin bu pencerede Ctrl+C yapin.
